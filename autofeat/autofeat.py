@@ -1,3 +1,6 @@
+# Author: Franziska Horn <cod3licious@gmail.com>
+# License: MIT
+
 from __future__ import unicode_literals, division, print_function, absolute_import
 from builtins import range, object
 
