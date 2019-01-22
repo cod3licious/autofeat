@@ -2,10 +2,10 @@
 ## A Linear Regression Model with Automatic Feature Engineering and Selection
 
 This library contains the `AutoFeatRegression` model with a similar interface as the `scikit-learn` models:
-- a `fit()` function to fit the model parameters
-- a `predict()` function to predict the target variable given the input
-- a `score()` function to calculate the goodness of the fit (R^2 value)
-- a `fit_transform()` and a `transform()` function, which extends the given data by the additional features that were engineered and selected by the model
+- `fit()` function to fit the model parameters
+- `predict()` function to predict the target variable given the input
+- `score()` function to calculate the goodness of the fit (R^2 value)
+- `fit_transform()` and `transform()` functions, which extend the given data by the additional features that were engineered and selected by the model
 
 When calling the `fit()` function, internally the `fit_transform()` function will be called, so if you're planing to call `transform()` on the same data anyways, just call `fit_transform()` right away. `transform()` is mostly useful if you've split your data into training and test data and did not call `fit_transform()` on your whole dataset. The `predict()` and `score()` functions can be either be given data in the format of the original dataframe that was used when calling `fit()`/`fit_transform()` or they can be given an already transformed dataframe.
 
