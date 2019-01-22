@@ -1,0 +1,14 @@
+.DS_Store
+*~
+*.sw[p|o]
+*.py[c|o]
+*.py~
+*.csv
+*.db
+.ipynb_checkpoints/
+examples/data/
+dist/
+build/
+autofeat.egg-info/
+MANIFEST.in
+setup.py
