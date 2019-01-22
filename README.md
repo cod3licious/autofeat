@@ -26,8 +26,8 @@ The code is intended for research purposes.
 If you have any questions please don't hesitate to send me an [email](mailto:cod3licious@gmail.com) and of course if you should find any bugs or want to contribute other improvements, pull requests are very welcome!
 
 ## Installation
-You either download the code from here and include the autofeat folder in your ``$PYTHONPATH`` or install (the library components only) via pip:
+You either download the code from here and include the autofeat folder in your `$PYTHONPATH` or install (the library components only) via pip:
 
-    `$ pip install autofeat`
+    $ pip install autofeat
 
 The library requires Python 3! Other dependencies: `numpy`, `pandas`, `scikit-learn`, `sympy`, and `pint`
