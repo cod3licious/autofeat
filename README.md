@@ -1,5 +1,5 @@
 # `autofeat` library
-## A Linear Regression Model with Automatic Feature Engineering and Selection
+### A Linear Regression Model with Automatic Feature Engineering and Selection
 
 This library contains the `AutoFeatRegression` model with a similar interface as the `scikit-learn` models:
 - `fit()` function to fit the model parameters
@@ -11,13 +11,13 @@ When calling the `fit()` function, internally the `fit_transform()` function wil
 
 The [notebook](https://github.com/cod3licious/autofeat/blob/master/autofeat_test.ipynb) contains a simple usage example - try it out! :)
 
-For further details on the model and implementation please refer to the [paper](https://arxiv.org/abs/1901.xxxxx)  - and of course if any of this code was helpful for your research, please consider citing it:
+For further details on the model and implementation please refer to the [paper](https://arxiv.org/abs/1901.07329)  - and of course if any of this code was helpful for your research, please consider citing it:
 ```
     @article{horn2019autofeat,
       author    = {Horn, Franziska and Pack, Robert and Rieger, Michael},
       title     = {The autofeat Python Library for Automatic Feature Engineering and Selection},
       year      = {2019},
-      journal   = {arXiv preprint arXiv:1901.xxxxx},
+      journal   = {arXiv preprint arXiv:1901.07329},
     }
 ```
 
@@ -31,3 +31,7 @@ You either download the code from here and include the autofeat folder in your `
     $ pip install autofeat
 
 The library requires Python 3! Other dependencies: `numpy`, `pandas`, `scikit-learn`, `sympy`, and `pint`
+
+## Acknowledgments
+
+This project was made possible thanks to support by the [BASF](https://www.basf.com).
