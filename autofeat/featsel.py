@@ -18,10 +18,11 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=
               to the n training data points. The variables should be scaled to have 0 mean and unit variance. If this is
               not the case, set df_scaled to False and it will be done for you.
         - target: n dimensional array with targets corresponding to the data points in df
-        - df_scaled: (bool) whether df is already scaled to have 0 mean and unit variance (default: False)
-        - max_it: how many iterations will be performed at most
-        - eps: eps parameter for LassoLarsCV regression model (might need to increase that to ~1e-8 or 1e-5 if you get a warning)
-        - verbose: verbosity level (int, default: 0)
+        - df_scaled: whether df is already scaled to have 0 mean and unit variance (bool; default: False)
+        - max_it: how many iterations will be performed at most (int; default: 100)
+        - eps: eps parameter for LassoLarsCV regression model (float; default: 1e-16;
+               might need to increase that to ~1e-8 or 1e-5 if you get a warning)
+        - verbose: verbosity level (int; default: 0)
     Returns:
         - good_cols: list of column names for df with which a regression model can be trained
     """
@@ -30,8 +31,10 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=
     if not df_scaled:
         # scale features to have 0 mean and unit std
         if verbose:
-            print("scaling data...", end="")
-        df = pd.DataFrame(s.fit_transform(df), columns=df.columns, dtype=np.float32)
+            print("[featsel] Scaling data...", end="")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df = pd.DataFrame(s.fit_transform(df), columns=df.columns, dtype=np.float32)
         if verbose:
             print("done.")
 
@@ -40,7 +43,7 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=
     best_cols = []
     # we want to select up to thr features (how much a regression model is comfortable with)
     thr = int(0.5 * df.shape[0])
-    # our first target is the original target variable; later we operate on target - predicted_target
+    # our first target is the original target variable; later we operate on (target - predicted_target)
     new_target = target
     residual = np.mean(np.abs(target))
     last_residuals = np.zeros(max_it)
@@ -49,7 +52,7 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=
     # we try optimizing features until we have converged or run over max_it
     while (it < max_it) and (not np.sum(np.isclose(residual, last_residuals)) >= 2):
         if verbose and not it % 10:
-            print("iteration %3i; %3i good cols with residual: %.6f" % (it, len(good_cols), residual))
+            print("[featsel] Iteration %3i; %3i selected features with residual: %.6f" % (it, len(good_cols), residual))
         last_residuals[it] = residual
         it += 1
         # select new possibly good columns from all but the currently considered good columns
@@ -75,5 +78,5 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=
             smallest_residual = residual
             best_cols = [c for c in good_cols]
     if verbose:
-        print("iteration %3i; %3i good cols with residual: %.6f  --> done." % (it, len(best_cols), smallest_residual))
+        print("[featsel] Iteration %3i; %3i selected features with residual: %.6f  --> done." % (it, len(best_cols), smallest_residual))
     return best_cols

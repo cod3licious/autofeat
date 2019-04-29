@@ -4,13 +4,15 @@
 
 from __future__ import unicode_literals, division, print_function, absolute_import
 from builtins import str
+import re
 import operator as op
 from functools import reduce
 from itertools import combinations, product
 import numpy as np
 import pandas as pd
 import sympy
-from sympy.utilities.autowrap import ufuncify
+#from sympy.utilities.autowrap import ufuncify
+from sympy.utilities.lambdify import lambdify
 import pint
 
 
@@ -38,7 +40,7 @@ def n_cols_generated(n_features, max_steps, n_transformations=7, n_combinations=
     if steps <= max_steps:
         # Step 1: apply transformations to original features
         original_cols += n_features * n_transformations
-        n_additions += n_features * 2
+        # n_additions += n_features * 2  # only if 1+ or 1- is in transformations!
         steps += 1
     if steps <= max_steps:
         # Step 2: first combination of features
@@ -47,7 +49,7 @@ def n_cols_generated(n_features, max_steps, n_transformations=7, n_combinations=
         steps += 1
     while steps <= max_steps:
         # apply transformations on these new features
-        n_additions += new_cols * 2
+        # n_additions += new_cols * 2
         new_cols += new_cols * n_transformations
         steps += 1
         # get combinations of old and new features
@@ -67,17 +69,17 @@ def n_cols_generated(n_features, max_steps, n_transformations=7, n_combinations=
             new_new_cols = 0
     # finally, apply transformation on the last new features
     if steps <= max_steps:
-        n_additions += new_cols * 2
+        # n_additions += new_cols * 2
         new_cols += new_cols * n_transformations
     return original_cols + new_cols + new_new_cols - n_additions
 
 
-def generate_features(
+def engineer_features(
     df_org,
-    start_features=[],
-    units={},
+    start_features=None,
+    units=None,
     max_steps=3,
-    transformations=["exp", "log", "abs", "sqrt", "^2", "^3", "1/"],
+    transformations=("exp", "log", "abs", "sqrt", "^2", "^3", "1/"),
     verbose=0,
 ):
     """
@@ -89,20 +91,20 @@ def generate_features(
     Inputs:
         - df_org: pandas DataFrame with original features in columns
         - start_features: list with column names for df_org with features that should be considered for expansion
-                          (default: [] --> all columns)
+                          (default: None --> all columns)
         - units: a dict with {column_name: pint.Quantity}: some operations like x+y can only be performed if the
-                 features have comparable units (default {}: all combinations are allowed)
+                 features have comparable units (default None: all combinations are allowed)
                  careful: will be modified in place!
-        - max_steps: how many feature engineering steps should be performed. Default is 4, this produces:
+        - max_steps: how many feature engineering steps should be performed. Default is 3, this produces:
             Step 1: transformation of original features
             Step 2: first combination of features
             Step 3: transformation of new features
-            Step 4: combination of old and new features
-            --> with 3 original features you will already end up with around 200k features after this!
+            (Step 4: combination of old and new features)
+            --> with 3 original features, after 4 steps you will already end up with around 200k features!
         - transformations: list of transformations that should be applied; possible elements:
                            "exp", "log", "abs", "sqrt", "^2", "^3", "1/", "1+", "1-", "sin", "cos", "exp-", "2^"
                            (first 7, i.e., up to 1/, are applied by default)
-        - verbose: verbosity level (int, default: 0)
+        - verbose: verbosity level (int; default: 0)
     Returns:
         - df: new DataFrame with all features in columns
         - feature_pool: dict with {col: sympy formula} formulas to generate each feature
@@ -110,10 +112,10 @@ def generate_features(
     # initialize the feature pool with columns from the dataframe
     if not start_features:
         start_features = df_org.columns
-    feature_pool = {c: sympy.symbols(c.replace(" ", ""), real=True) for c in start_features}
+    feature_pool = {c: sympy.symbols(re.sub(r"\W+", "", c), real=True) for c in start_features}
     if max_steps < 1:
         if verbose:
-            print("Warning: no features generated for max_steps < 1.")
+            print("[feateng] Warning: no features generated for max_steps < 1.")
         return df_org, feature_pool
     # get a copy of the dataframe - this is where all the features will be added
     df = pd.DataFrame(df_org.copy(), dtype=np.float32)
@@ -175,14 +177,14 @@ def generate_features(
         feat_array = np.zeros((df.shape[0], len(features_list) * len(transformations)), dtype=np.float32)
         for i, feat in enumerate(features_list):
             if verbose and not i % 100:
-                print("%15i/%15i" % (i, len(features_list)), end="\r")
+                print("[feateng] %15i/%15i features transformed" % (i, len(features_list)), end="\r")
             for ft in transformations:
                 # check if transformation is valid for particular feature (i.e. given actual numerical values)
                 if func_transform_cond[ft](df[feat]):
                     # get the expression (based on the primary features)
                     expr = func_transform[ft](feature_pool[feat])
                     expr_name = str(expr)
-                    # we're simplifying expressions, so we might already that one
+                    # we're simplifying expressions, so we might already have that one
                     if expr_name not in feature_pool:
                         # if we're given units, check if the operation is legal
                         if units:
@@ -195,13 +197,13 @@ def generate_features(
                         # create temporary variable expression and apply it to precomputed feature
                         t = sympy.symbols("t")
                         expr_temp = func_transform[ft](t)
-                        f = ufuncify(t, expr_temp)
+                        f = lambdify(t, expr_temp)
                         new_feat = np.array(f(df[feat].values), dtype=np.float32)
                         if np.isfinite(new_feat).all():
                             feat_array[:, len(new_features)] = new_feat
                             new_features.append(expr_name)
         if verbose:
-            print("%15i/%15i done." % (len(new_features), len(features_list)))
+            print("[feateng] Generated %i transformed features from %i original features - done." % (len(new_features), len(features_list)))
         df = df.join(pd.DataFrame(feat_array[:, :len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
         return new_features
 
@@ -222,7 +224,7 @@ def generate_features(
         feat_array = np.zeros((df.shape[0], len(feature_tuples) * len(func_combinations)), dtype=np.float32)
         for i, (feat1, feat2) in enumerate(feature_tuples):
             if verbose and not i % 100:
-                print("%15i/%15i" % (i, len(feature_tuples)), end="\r")
+                print("[feateng] %15i/%15i feature tuples combined" % (i, len(feature_tuples)), end="\r")
             for fc in func_combinations:
                 expr = func_combinations[fc](feature_pool[feat1], feature_pool[feat2])
                 expr_name = str(expr)
@@ -238,45 +240,45 @@ def generate_features(
                     # create temporary variable expression to apply it to precomputed features
                     s, t = sympy.symbols("s t")
                     expr_temp = func_combinations[fc](s, t)
-                    f = ufuncify((s, t), expr_temp)
+                    f = lambdify((s, t), expr_temp)
                     new_feat = np.array(f(df[feat1].values, df[feat2].values), dtype=np.float32)
                     if np.isfinite(new_feat).all():
                         feat_array[:, len(new_features)] = new_feat
                         new_features.append(expr_name)
         if verbose:
-            print("%15i/%15i done." % (len(new_features), len(feature_tuples)))
+            print("[feateng] Generated %i feature combinations from %i original feature tuples - done." % (len(new_features), len(feature_tuples)))
         df = df.join(pd.DataFrame(feat_array[:, :len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
         return new_features
 
     # get transformations of initial features
     steps = 1
     if verbose:
-        print("Step 1: transformation of original features")
+        print("[feateng] Step 1: transformation of original features")
     original_features = list(feature_pool.keys())
     original_features.extend(apply_tranformations(original_features))
     steps += 1
     # get combinations of first feature set
     if steps <= max_steps:
         if verbose:
-            print("Step 2: first combination of features")
+            print("[feateng] Step 2: first combination of features")
         new_features = get_feature_combinations(list(combinations(original_features, 2)))
         steps += 1
     while steps <= max_steps:
         # apply transformations on these new features
         if verbose:
-            print("Step %i: transformation of new features" % steps)
+            print("[feateng] Step %i: transformation of new features" % steps)
         new_features.extend(apply_tranformations(new_features))
         steps += 1
         # get combinations of old and new features
         if steps <= max_steps:
             if verbose:
-                print("Step %i: combination of old and new features" % steps)
+                print("[feateng] Step %i: combination of old and new features" % steps)
             new_new_features = get_feature_combinations(list(product(original_features, new_features)))
             steps += 1
         # and combinations of new features within themselves
         if steps <= max_steps:
             if verbose:
-                print("Step %i: combination of new features" % steps)
+                print("[feateng] Step %i: combination of new features" % steps)
             new_new_features.extend(get_feature_combinations(list(combinations(new_features, 2))))
             steps += 1
             # update old and new features and repeat
@@ -285,7 +287,7 @@ def generate_features(
     # finally, apply transformation on the last new features
     if steps <= max_steps:
         if verbose:
-            print("Step %i: transformation of last new features" % steps)
+            print("[feateng] Step %i: transformation of last new features" % steps)
         new_features.extend(apply_tranformations(new_features))
 
     # sort out all features that are just additions on the highest level

@@ -3,7 +3,8 @@
 # License: MIT
 
 from __future__ import unicode_literals, division, print_function, absolute_import
-from builtins import range, object
+from builtins import range
+import re
 import warnings
 from collections import Counter
 from joblib import Parallel, delayed
@@ -12,20 +13,22 @@ import pandas as pd
 import sklearn.linear_model as lm
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.base import BaseEstimator, RegressorMixin
-from sympy.utilities.autowrap import ufuncify
+from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
+from sympy.utilities.lambdify import lambdify
 import pint
 
-from .feateng import generate_features, n_cols_generated
+from .feateng import engineer_features, n_cols_generated
 from .featsel import select_features
 
 
-def _parse_units(units, ureg=None):
+def _parse_units(units, ureg=None, verbose=0):
     """
     Convert a dict with string units to pint quantities.
 
     Inputs:
         - units: dict with {"variable_name": "unit"}
         - ureg: optional: a pint UnitRegistry
+        - verbose: verbosity level (int; default: 0)
 
     Returns
         - parsed_units: dict with {"variable_name": pint Quantity}
@@ -37,7 +40,8 @@ def _parse_units(units, ureg=None):
         try:
             parsed_units[c] = ureg.parse_expression(units[c])
         except pint.UndefinedUnitError:
-            print("[AutoFeatRegression] WARNING: unit %r of column %r was not recognized and will be ignored!" % (units[c], c))
+            if verbose:
+                print("[AutoFeatRegression] WARNING: unit %r of column %r was not recognized and will be ignored!" % (units[c], c))
             parsed_units[c] = ureg.parse_expression("")
         parsed_units[c].__dict__["_magnitude"] = 1.
     return parsed_units
@@ -47,13 +51,14 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
 
     def __init__(
         self,
-        categorical_cols=[],
+        categorical_cols=None,
         feateng_cols=None,
-        units={},
+        units=None,
         feateng_steps=3,
         featsel_runs=5,
+        featsel_max_it=100,
         max_gb=None,
-        transformations=["exp", "log", "abs", "sqrt", "^2", "^3", "1/"],
+        transformations=("exp", "log", "abs", "sqrt", "^2", "^3", "1/"),
         n_jobs=1,
         verbose=0,
     ):
@@ -63,31 +68,39 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
 
         Inputs:
             - categorical_cols: list of column names of categorical features; these will be transformed into
-                                0/1 encoding and not used in the feature engineering part (default: [])
+                                0/1 encoding and not used in the feature engineering part (default: None)
             - feateng_cols: list of column names that should be used for the feature engineering part
                             (default None --> all except categorical_cols)
             - units: dictionary with {col_name: unit} where unit is a string that can be converted into a pint unit.
                      all columns without units are dimensionless and can be combined with any other column
-                     (default: {} --> all columns are dimensionless).
+                     (default: None --> all columns are dimensionless).
             - feateng_steps: number of steps to perform in the feature engineering part (int; default: 3)
             - featsel_runs: number of times to perform in the feature selection part with a random fraction of data points (int; default: 5)
+            - featsel_max_it: maximum number of iterations for the feature selection (int; default 100)
             - max_gb: if an int is given: maximum number of gigabytes to use in the process (i.e. mostly the
                       feature engineering part). this is no guarantee! it will lead to subsampling of the
                       data points if the new dataframe generated is n_rows * n_cols * 32bit > max_gb
             - transformations: list of transformations that should be applied; possible elements:
                                "exp", "log", "abs", "sqrt", "^2", "^3", "1/", "1+", "1-", "sin", "cos", "exp-", "2^"
                                (first 7, i.e., up to 1/, are applied by default)
-            - n_jobs: how many jobs to run when selecting the features in parallel (default: 1)
-            - verbose: verbosity level (int, default: 0)
+            - n_jobs: how many jobs to run when selecting the features in parallel (int; default: 1)
+            - verbose: verbosity level (int; default: 0)
+
+        Attributes:
+            - regression_model_: trained regression model
+            - feature_formulas_: sympy formulas to generate new features
+            - feature_functions_: compiled feature functions with columns
+            - new_feat_cols_: list of good new features that should be generated when calling transform()
 
         Note: when giving categorical_cols or feateng_cols, X later (i.e. when calling fit/fit_transform) has to be a DataFrame
         """
         self.categorical_cols = categorical_cols
         self.feateng_cols = feateng_cols
-        self.units = units
+        self.units = units if units is not None else {}
         self.feateng_steps = feateng_steps
         self.max_gb = max_gb
         self.featsel_runs = featsel_runs
+        self.featsel_max_it = featsel_max_it
         self.transformations = transformations
         self.n_jobs = n_jobs
         self.verbose = verbose
@@ -96,17 +109,15 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         # compiled feature functions with columns
         self.feature_functions_ = {}
         # list of good new features that should be generated when calling transform()
-        self.new_feat_cols = []
-        # trained regression model
-        self.regression_model_ = None
+        self.new_feat_cols_ = []
 
     def __getstate__(self):
         """
         get dict for pickling without feature_functions as they are not pickleable
         """
-        return {k: self.__dict__[k] if k != "feature_functions" else {} for k in self.__dict__}
+        return {k: self.__dict__[k] if k != "feature_functions_" else {} for k in self.__dict__}
 
-    def _transform_categorical_cols(self, df, cols={}):
+    def _transform_categorical_cols(self, df, cols=None):
         """
         Transform categorical features into 0/1 encoding.
 
@@ -126,14 +137,14 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                 df = df.join(pd.DataFrame(ohe, columns=["%s_%r" % (str(c), i) for i in e.categories_[0]], index=df.index))
             # remove the categorical column from our columns to consider
             df.drop(columns=self.categorical_cols, inplace=True)
-        if cols:
+        if cols is not None:
             return df, cols
         return df
 
     def _apply_pi_theorem(self, df):
         if self.units:
             ureg = pint.UnitRegistry(auto_reduce_dimensions=True, autoconvert_offset_to_baseunit=True)
-            parsed_units = _parse_units(self.units, ureg)
+            parsed_units = _parse_units(self.units, ureg, self.verbose)
             # use only original features
             parsed_units = {c: parsed_units[c] for c in self.feateng_cols if not parsed_units[c].dimensionless}
             if self.verbose:
@@ -141,13 +152,13 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             pi_theorem_results = ureg.pi_theorem(parsed_units)
             for i, r in enumerate(pi_theorem_results, 1):
                 if self.verbose:
-                    print("Pi Theorem %i: " % i, pint.formatter(r.items()))
+                    print("[AutoFeatRegression] Pi Theorem %i: " % i, pint.formatter(r.items()))
                 # compute the final result by multiplying and taking the power of
                 cols = sorted(r)
                 ptr = df[cols[0]].values**r[cols[0]]
                 for c in cols[1:]:
                     ptr *= df[c].values**r[c]
-                df["PT%i: %s" % (i, pint.formatter(r.items()).replace(" ", ""))] = ptr
+                df["PT%i_%s" % (i, pint.formatter(r.items()).replace(" ", ""))] = ptr
         return df
 
     def _generate_features(self, df, new_feat_cols):
@@ -169,16 +180,16 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         feat_array = np.zeros((len(df), len(new_feat_cols)))
         for i, expr in enumerate(new_feat_cols):
             if self.verbose:
-                print("[AutoFeatRegression] %5i/%5i" % (i, len(new_feat_cols)), end="\r")
+                print("[AutoFeatRegression] %5i/%5i new features" % (i, len(new_feat_cols)), end="\r")
             if expr not in self.feature_functions_:
                 # generate a substitution expression based on all the original symbols of the original features
                 # for the given generated feature in good cols
                 # since sympy can handle only up to 32 original features in ufunctify, we need to check which features
                 # to consider here, therefore perform some crude check to limit the number of features used
-                cols = [c for c in self.feateng_cols if c in expr]
+                cols = [c for c in self.feateng_cols if re.sub(r"\W+", "", c) in expr]
                 try:
-                    f = ufuncify((self.feature_formulas_[c] for c in cols), self.feature_formulas_[expr])
-                except:
+                    f = lambdify([self.feature_formulas_[c] for c in cols], self.feature_formulas_[expr])
+                except Exception:
                     print("[AutoFeatRegression] Error while processing expression: %r" % expr)
                     raise
                 self.feature_functions_[expr] = (cols, f)
@@ -190,7 +201,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                 print("[AutoFeatRegression] Problem while evaluating expression: %r with columns %r - are maybe some values 0 that shouldn't be?" % (expr, cols))
                 raise
         if self.verbose:
-            print("[AutoFeatRegression] %5i/%5i ...done." % (len(new_feat_cols), len(new_feat_cols)))
+            print("[AutoFeatRegression] %5i/%5i new features ...done." % (len(new_feat_cols), len(new_feat_cols)))
         df = df.join(pd.DataFrame(feat_array, columns=new_feat_cols, index=df.index))
         return df
 
@@ -211,22 +222,20 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         Note: we strongly encourage you to name your features X1 ...  Xn or something simple like this before passing
               a DataFrame to this model. This can help avoid potential problems with sympy later on.
         """
-        # we need y as a numpy array later anyways
-        if isinstance(y, pd.DataFrame) or isinstance(y, pd.core.series.Series):
-            target = y.values
-        else:
-            target = y
-        if len(target.shape) > 1:
-            target = target[:, 0]
-        # possibly transform X to a dataframe or copy to mess around with it
+        # check input variables
         if not isinstance(X, pd.DataFrame):
-            df = pd.DataFrame(X, columns=["x%i" % i for i in range(10, 10 + X.shape[1])])
+            # the additional zeros in the name are because of the variable check in _generate_features,
+            # where we check if the column name occurs in the the expression. this would lead to many
+            # false positives if we have features x1 and x10...x19 instead of x001...x019.
+            cols = ["x%03i" % i for i in range(X.shape[1])]
         else:
-            df = X.copy()
-            # in case X was created by filtering out some rows
-            df.reset_index(drop=True, inplace=True)
+            cols = X.columns
+        # we need y as a numpy array later anyways
+        X, target = check_X_y(X, y, y_numeric=True)
+        # transform X into a dataframe (again)
+        df = pd.DataFrame(X, columns=cols)
         # possibly convert categorical columns
-        cols = set(df.columns)
+        cols = set(cols)
         df, cols = self._transform_categorical_cols(df, cols)
         # if we're not given specific feateng_cols, then just take all columns except categorical
         if not self.feateng_cols:
@@ -256,22 +265,24 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             df_subs = df
             target_sub = target
         # generate features and scale to have 0 mean and unit std
-        df_scaled, self.feature_formulas_ = generate_features(df_subs, self.feateng_cols, _parse_units(self.units),
+        df_scaled, self.feature_formulas_ = engineer_features(df_subs, self.feateng_cols, _parse_units(self.units, verbose=self.verbose),
                                                               self.feateng_steps, self.transformations, self.verbose)
-        s = StandardScaler()
-        df_scaled = pd.DataFrame(s.fit_transform(df_scaled), columns=df_scaled.columns, dtype=np.float32)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            s = StandardScaler()
+            df_scaled = pd.DataFrame(s.fit_transform(df_scaled), columns=df_scaled.columns, dtype=np.float32)
         # do sort of a cross-validation (i.e., randomly subsample data points)
         # to select features with high relevance
         selected_columns = []
         idx = list(df_scaled.index)
         if self.verbose:
-            print("[AutoFeatRegression] Selecting good features in %i runs" % self.featsel_runs)
+            print("[AutoFeatRegression] Selecting good features in %i featsel runs" % self.featsel_runs)
 
         # select good features in 5 runs in parallel
         def run_select_features(i):
             np.random.seed(i)
             train_idx = np.random.permutation(idx)[:int(0.8 * len(idx))]
-            return select_features(df_scaled.iloc[train_idx], target_sub[train_idx], True, eps=1e-8, verbose=self.verbose)
+            return select_features(df_scaled.iloc[train_idx], target_sub[train_idx], True, max_it=self.featsel_max_it, eps=1e-8, verbose=self.verbose)
         if self.n_jobs == 1:
             # only use parallelization code if you actually parallelize
             selected_columns = []
@@ -312,24 +323,21 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                 reg.fit(X, target)
             weights = dict(zip(list(df.columns), reg.coef_))
             if not i:
-                self.new_feat_cols = [c for c in weights if abs(weights[c] * df[c].std()) >= 1e-6 and c not in original_features]
-                df = df[original_features + self.new_feat_cols]
+                self.new_feat_cols_ = [c for c in weights if abs(weights[c] * df[c].std()) >= 1e-6 and c not in original_features]
+                df = df[original_features + self.new_feat_cols_]
         # filter out unnecessary junk from self.feature_formulas_
-        self.feature_formulas_ = {f: self.feature_formulas_[f] for f in self.new_feat_cols + self.feateng_cols}
-        self.feature_functions_ = {f: self.feature_functions_[f] for f in self.new_feat_cols}
-        if self.verbose:
-            print("[AutoFeatRegression] Trained model coefficients:")
-            print(reg.intercept_)
-        for c in sorted(weights, key=lambda x: abs(weights[x]), reverse=True):
-            if abs(weights[c]) < 1e-5:
-                break
-            if self.verbose:
-                print("%.6f * %s" % (weights[c], c))
-        if self.verbose:
-            print("[AutoFeatRegression] Final R^2: %.4f" % reg.score(X, target))
+        self.feature_formulas_ = {f: self.feature_formulas_[f] for f in self.new_feat_cols_ + self.feateng_cols}
+        self.feature_functions_ = {f: self.feature_functions_[f] for f in self.new_feat_cols_}
         self.regression_model_ = reg
-        # final dataframe contains original columns, good additional columns, and target column
         if self.verbose:
+            print("[AutoFeatRegression] Trained model: largest coefficients:")
+            print(reg.intercept_)
+            for c in sorted(weights, key=lambda x: abs(weights[x]), reverse=True):
+                if abs(weights[c]) < 1e-5:
+                    break
+                print("%.6f * %s" % (weights[c], c))
+            print("[AutoFeatRegression] Final R^2: %.4f" % reg.score(X, target))
+            # final dataframe contains original columns, good additional columns, and target column
             print("[AutoFeatRegression] Final dataframe with %i feature columns (%i new)." % (len(df.columns), len(df.columns) - len(original_features)))
         return df
 
@@ -349,19 +357,19 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                       into multiple 0/1 columns) and the most promising engineered features. This df can then be
                       used to train your final model.
         """
-        if self.regression_model_ is None:
-            raise RuntimeError("[AutoFeatRegression] First call fit or fit_transform to train the model!")
-        # possibly transform X to a dataframe or copy to mess around with it
+        check_is_fitted(self, ['regression_model_'])
+        # check input
         if not isinstance(X, pd.DataFrame):
-            df = pd.DataFrame(X, columns=["x%i" % i for i in range(10, 10 + X.shape[1])])
+            cols = ["x%03i" % i for i in range(X.shape[1])]
         else:
-            df = X.copy()
+            cols = X.columns
+        df = pd.DataFrame(check_array(X), columns=cols)
         # possibly convert categorical columns
         df = self._transform_categorical_cols(df)
         # possibly apply pi-theorem
         df = self._apply_pi_theorem(df)
         # generate engineered features
-        df = self._generate_features(df, self.new_feat_cols)
+        df = self._generate_features(df, self.new_feat_cols_)
         return df
 
     def predict(self, X):
@@ -371,15 +379,15 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         Returns:
             - y_pred: vector of predicted targets return by regression_model.predict()
         """
-        if self.regression_model_ is None:
-            raise RuntimeError("[AutoFeatRegression] First call fit or fit_transform to train the model!")
-        # possibly transform X to a dataframe or copy to mess around with it
+        check_is_fitted(self, ['regression_model_'])
+        # check input
         if not isinstance(X, pd.DataFrame):
-            df = pd.DataFrame(X, columns=["x%i" % i for i in range(10, 10 + X.shape[1])])
+            cols = ["x%03i" % i for i in range(X.shape[1])]
         else:
-            df = X
+            cols = X.columns
+        df = pd.DataFrame(check_array(X), columns=cols)
         # check if the dataframe was already transformed
-        if not self.new_feat_cols[0] in df:
+        if not self.new_feat_cols_[0] in df:
             df = self.transform(df)
         return self.regression_model_.predict(df.values)
 
@@ -391,17 +399,17 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         Returns:
             - R^2 value returned by regression_model.score()
         """
-        if self.regression_model_ is None:
-            raise RuntimeError("[AutoFeatRegression] First call fit or fit_transform to train the model!")
-        # possibly transform X to a dataframe or copy to mess around with it
+        check_is_fitted(self, ['regression_model_'])
+        # check input variables
         if not isinstance(X, pd.DataFrame):
-            df = pd.DataFrame(X, columns=["x%i" % i for i in range(10, 10 + X.shape[1])])
+            cols = ["x%03i" % i for i in range(X.shape[1])]
         else:
-            df = X
+            cols = X.columns
+        # we need y as a numpy array later anyways
+        X, target = check_X_y(X, y, y_numeric=True)
+        # transform X into a dataframe (again)
+        df = pd.DataFrame(X, columns=cols)
         # check if the dataframe was already transformed
-        if not self.new_feat_cols[0] in df:
+        if not self.new_feat_cols_[0] in df:
             df = self.transform(df)
-        # get the target as an array
-        if isinstance(y, pd.DataFrame) or isinstance(y, pd.core.series.Series):
-            y = y.values
         return self.regression_model_.score(df.values, y)

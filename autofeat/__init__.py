@@ -3,5 +3,5 @@
 # License: MIT
 
 name = "autofeat"
-__version__ = 0.1
+__version__ = 0.2
 from .autofeat import AutoFeatRegression  # noqa
