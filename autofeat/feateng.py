@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Author: Franziska Horn <cod3licious@gmail.com>
 # License: MIT
 
@@ -185,7 +186,7 @@ def generate_features(
                             try:
                                 units[expr_name] = func_transform_units[ft](units[feat])
                                 units[expr_name].__dict__["_magnitude"] = 1.
-                            except (pint.DimensionalityError, pint.OffsetUnitCalculusError) as e:
+                            except (pint.DimensionalityError, pint.OffsetUnitCalculusError):
                                 continue
                         feature_pool[expr_name] = expr
                         # create temporary variable expression and apply it to precomputed feature
@@ -227,7 +228,7 @@ def generate_features(
                         try:
                             units[expr_name] = func_combinations[fc](units[feat1], units[feat2])
                             units[expr_name].__dict__["_magnitude"] = 1.
-                        except (pint.DimensionalityError, pint.OffsetUnitCalculusError) as e:
+                        except (pint.DimensionalityError, pint.OffsetUnitCalculusError):
                             continue
                     feature_pool[expr_name] = expr
                     # create temporary variable expression to apply it to precomputed features

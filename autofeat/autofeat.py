@@ -1,9 +1,9 @@
+# -*- coding: utf-8 -*-
 # Author: Franziska Horn <cod3licious@gmail.com>
 # License: MIT
 
 from __future__ import unicode_literals, division, print_function, absolute_import
 from builtins import range, object
-
 import warnings
 from collections import Counter
 from joblib import Parallel, delayed
@@ -35,7 +35,7 @@ def _parse_units(units, ureg=None):
     for c in units:
         try:
             parsed_units[c] = ureg.parse_expression(units[c])
-        except pint.UndefinedUnitError as e:
+        except pint.UndefinedUnitError:
             print("[AutoFeatRegression] WARNING: unit %r of column %r was not recognized and will be ignored!" % (units[c], c))
             parsed_units[c] = ureg.parse_expression("")
         parsed_units[c].__dict__["_magnitude"] = 1.
@@ -114,7 +114,7 @@ class AutoFeatRegression(object):
             - if cols was given: updated cols set
         """
         if self.categorical_cols:
-            e = OneHotEncoder(sparse=False, categories='auto')
+            e = OneHotEncoder(sparse=False, categories="auto")
             for c in self.categorical_cols:
                 if cols:
                     cols.remove(c)
@@ -178,7 +178,7 @@ class AutoFeatRegression(object):
                 cols, f = self.feature_functions[expr]
             try:
                 feat_array[:, i] = f(*(df[c].values for c in cols))
-            except RuntimeWarning as e:
+            except RuntimeWarning:
                 print("[AutoFeatRegression] Problem while evaluating expression: %r with columns %r - are maybe some values 0 that shouldn't be?" % (expr, cols))
                 raise
         print("[AutoFeatRegression] %5i/%5i ...done." % (len(new_feat_cols), len(new_feat_cols)))
@@ -266,7 +266,9 @@ class AutoFeatRegression(object):
             for i in range(self.featsel_runs):
                 selected_columns.extend(run_select_features(i))
         else:
-            flatten_lists = lambda l: [item for sublist in l for item in sublist]
+            def flatten_lists(l):
+                return [item for sublist in l for item in sublist]
+
             selected_columns = flatten_lists(Parallel(n_jobs=self.n_jobs, verbose=100)(delayed(run_select_features)(i) for i in range(self.featsel_runs)))
         # check in how many runs each feature was selected and only takes those that were selected in more than one run
         selected_columns = Counter(selected_columns)
@@ -281,7 +283,7 @@ class AutoFeatRegression(object):
             reg = lm.LassoLarsCV(eps=1e-8)
             reg.fit(X, target_sub)
         weights = dict(zip(list(df_scaled.columns), reg.coef_))
-        good_cols = [c for c in weights if abs(weights[c]) >= 1e-5 and c not in original_features]
+        good_cols = [c for c in weights if abs(weights[c]) >= 1e-6 and c not in original_features]
         print("[AutoFeatRegression] %i new features selected." % len(good_cols))
         # re-generate all good feature again; unscaled this time
         df = self._generate_features(df, good_cols)

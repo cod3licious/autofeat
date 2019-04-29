@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Author: Franziska Horn <cod3licious@gmail.com>
 # License: MIT
 
