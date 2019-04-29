@@ -11,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 import sklearn.linear_model as lm
 
 
-def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16):
+def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=0):
     """
     Inputs:
         - df: nxp pandas DataFrame with n data points and p features; to avoid overfitting, only provide data belonging
@@ -21,6 +21,7 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16):
         - df_scaled: (bool) whether df is already scaled to have 0 mean and unit variance (default: False)
         - max_it: how many iterations will be performed at most
         - eps: eps parameter for LassoLarsCV regression model (might need to increase that to ~1e-8 or 1e-5 if you get a warning)
+        - verbose: verbosity level (int, default: 0)
     Returns:
         - good_cols: list of column names for df with which a regression model can be trained
     """
@@ -28,9 +29,11 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16):
     # for performance reasons the scaled data can already be given
     if not df_scaled:
         # scale features to have 0 mean and unit std
-        print("scaling data...", end="")
+        if verbose:
+            print("scaling data...", end="")
         df = pd.DataFrame(s.fit_transform(df), columns=df.columns, dtype=np.float32)
-        print("done.")
+        if verbose:
+            print("done.")
 
     # good cols contains the currently considered good features (=columns)
     good_cols = []
@@ -45,7 +48,7 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16):
     it = 0
     # we try optimizing features until we have converged or run over max_it
     while (it < max_it) and (not np.sum(np.isclose(residual, last_residuals)) >= 2):
-        if not it % 10:
+        if verbose and not it % 10:
             print("iteration %3i; %3i good cols with residual: %.6f" % (it, len(good_cols), residual))
         last_residuals[it] = residual
         it += 1
@@ -71,5 +74,6 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16):
         if residual < smallest_residual:
             smallest_residual = residual
             best_cols = [c for c in good_cols]
-    print("iteration %3i; %3i good cols with residual: %.6f  --> done." % (it, len(best_cols), smallest_residual))
+    if verbose:
+        print("iteration %3i; %3i good cols with residual: %.6f  --> done." % (it, len(best_cols), smallest_residual))
     return best_cols

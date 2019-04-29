@@ -9,8 +9,9 @@ from collections import Counter
 from joblib import Parallel, delayed
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import sklearn.linear_model as lm
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.base import BaseEstimator, RegressorMixin
 from sympy.utilities.autowrap import ufuncify
 import pint
 
@@ -42,7 +43,7 @@ def _parse_units(units, ureg=None):
     return parsed_units
 
 
-class AutoFeatRegression(object):
+class AutoFeatRegression(BaseEstimator, RegressorMixin):
 
     def __init__(
         self,
@@ -54,6 +55,7 @@ class AutoFeatRegression(object):
         max_gb=None,
         transformations=["exp", "log", "abs", "sqrt", "^2", "^3", "1/"],
         n_jobs=1,
+        verbose=0,
     ):
         """
         multi-step feature engineering and cross-validated feature selection to generate promising additional
@@ -76,6 +78,7 @@ class AutoFeatRegression(object):
                                "exp", "log", "abs", "sqrt", "^2", "^3", "1/", "1+", "1-", "sin", "cos", "exp-", "2^"
                                (first 7, i.e., up to 1/, are applied by default)
             - n_jobs: how many jobs to run when selecting the features in parallel (default: 1)
+            - verbose: verbosity level (int, default: 0)
 
         Note: when giving categorical_cols or feateng_cols, X later (i.e. when calling fit/fit_transform) has to be a DataFrame
         """
@@ -87,14 +90,15 @@ class AutoFeatRegression(object):
         self.featsel_runs = featsel_runs
         self.transformations = transformations
         self.n_jobs = n_jobs
+        self.verbose = verbose
         # sympy formulas to generate new features
-        self.feature_formulas = {}
+        self.feature_formulas_ = {}
         # compiled feature functions with columns
-        self.feature_functions = {}
+        self.feature_functions_ = {}
         # list of good new features that should be generated when calling transform()
         self.new_feat_cols = []
         # trained regression model
-        self.regression_model = None
+        self.regression_model_ = None
 
     def __getstate__(self):
         """
@@ -132,10 +136,12 @@ class AutoFeatRegression(object):
             parsed_units = _parse_units(self.units, ureg)
             # use only original features
             parsed_units = {c: parsed_units[c] for c in self.feateng_cols if not parsed_units[c].dimensionless}
-            print("[AutoFeatRegression] Applying the Pi Theorem")
+            if self.verbose:
+                print("[AutoFeatRegression] Applying the Pi Theorem")
             pi_theorem_results = ureg.pi_theorem(parsed_units)
             for i, r in enumerate(pi_theorem_results, 1):
-                print("Pi Theorem %i: " % i, pint.formatter(r.items()))
+                if self.verbose:
+                    print("Pi Theorem %i: " % i, pint.formatter(r.items()))
                 # compute the final result by multiplying and taking the power of
                 cols = sorted(r)
                 ptr = df[cols[0]].values**r[cols[0]]
@@ -151,37 +157,40 @@ class AutoFeatRegression(object):
 
         Inputs:
             - df: pandas dataframe with original features
-            - new_feat_cols: names of new features that should be generated (keys of self.feature_formulas)
+            - new_feat_cols: names of new features that should be generated (keys of self.feature_formulas_)
         Returns:
             - df: dataframe with the additional feature columns added
         """
-        assert new_feat_cols[0] in self.feature_formulas,\
-            "[AutoFeatRegression] First call fit or fit_transform to generate the features!"
-        print("[AutoFeatRegression] Computing %i new features." % len(new_feat_cols))
+        if not new_feat_cols[0] in self.feature_formulas_:
+            raise RuntimeError("[AutoFeatRegression] First call fit or fit_transform to generate the features!")
+        if self.verbose:
+            print("[AutoFeatRegression] Computing %i new features." % len(new_feat_cols))
         # generate all good feature; unscaled this time
         feat_array = np.zeros((len(df), len(new_feat_cols)))
         for i, expr in enumerate(new_feat_cols):
-            print("[AutoFeatRegression] %5i/%5i" % (i, len(new_feat_cols)), end="\r")
-            if expr not in self.feature_functions:
+            if self.verbose:
+                print("[AutoFeatRegression] %5i/%5i" % (i, len(new_feat_cols)), end="\r")
+            if expr not in self.feature_functions_:
                 # generate a substitution expression based on all the original symbols of the original features
                 # for the given generated feature in good cols
                 # since sympy can handle only up to 32 original features in ufunctify, we need to check which features
                 # to consider here, therefore perform some crude check to limit the number of features used
                 cols = [c for c in self.feateng_cols if c in expr]
                 try:
-                    f = ufuncify((self.feature_formulas[c] for c in cols), self.feature_formulas[expr])
+                    f = ufuncify((self.feature_formulas_[c] for c in cols), self.feature_formulas_[expr])
                 except:
                     print("[AutoFeatRegression] Error while processing expression: %r" % expr)
                     raise
-                self.feature_functions[expr] = (cols, f)
+                self.feature_functions_[expr] = (cols, f)
             else:
-                cols, f = self.feature_functions[expr]
+                cols, f = self.feature_functions_[expr]
             try:
                 feat_array[:, i] = f(*(df[c].values for c in cols))
             except RuntimeWarning:
                 print("[AutoFeatRegression] Problem while evaluating expression: %r with columns %r - are maybe some values 0 that shouldn't be?" % (expr, cols))
                 raise
-        print("[AutoFeatRegression] %5i/%5i ...done." % (len(new_feat_cols), len(new_feat_cols)))
+        if self.verbose:
+            print("[AutoFeatRegression] %5i/%5i ...done." % (len(new_feat_cols), len(new_feat_cols)))
         df = df.join(pd.DataFrame(feat_array, columns=new_feat_cols, index=df.index))
         return df
 
@@ -232,11 +241,13 @@ class AutoFeatRegression(object):
         # (n_rows * n_cols * 32/8)/1000000000 <= max_gb
         n_cols = n_cols_generated(len(self.feateng_cols), self.feateng_steps, len(self.transformations))
         n_gb = (len(df) * n_cols) / 250000000
-        print("[AutoFeatRegression] The %i step feature engineering process could generate up to %i features." % (self.feateng_steps, n_cols))
-        print("[AutoFeatRegression] With %i data points this new feature matrix would use about %.2f gb of space." % (len(df), n_gb))
+        if self.verbose:
+            print("[AutoFeatRegression] The %i step feature engineering process could generate up to %i features." % (self.feateng_steps, n_cols))
+            print("[AutoFeatRegression] With %i data points this new feature matrix would use about %.2f gb of space." % (len(df), n_gb))
         if self.max_gb and n_gb > self.max_gb:
             n_rows = int(self.max_gb * 250000000 / n_cols)
-            print("[AutoFeatRegression] As you specified a limit of %.1d gb, the number of data points is subsampled to %i" % (self.max_gb, n_rows))
+            if self.verbose:
+                print("[AutoFeatRegression] As you specified a limit of %.1d gb, the number of data points is subsampled to %i" % (self.max_gb, n_rows))
             subsample_idx = np.random.permutation(list(df.index))[:n_rows]
             df_subs = df.iloc[subsample_idx]
             df_subs.reset_index(drop=True, inplace=True)
@@ -245,21 +256,22 @@ class AutoFeatRegression(object):
             df_subs = df
             target_sub = target
         # generate features and scale to have 0 mean and unit std
-        df_scaled, self.feature_formulas = generate_features(df_subs, self.feateng_cols, _parse_units(self.units),
-                                                             self.feateng_steps, self.transformations)
+        df_scaled, self.feature_formulas_ = generate_features(df_subs, self.feateng_cols, _parse_units(self.units),
+                                                              self.feateng_steps, self.transformations, self.verbose)
         s = StandardScaler()
         df_scaled = pd.DataFrame(s.fit_transform(df_scaled), columns=df_scaled.columns, dtype=np.float32)
         # do sort of a cross-validation (i.e., randomly subsample data points)
         # to select features with high relevance
         selected_columns = []
         idx = list(df_scaled.index)
-        print("[AutoFeatRegression] Selecting good features in %i runs" % self.featsel_runs)
+        if self.verbose:
+            print("[AutoFeatRegression] Selecting good features in %i runs" % self.featsel_runs)
 
         # select good features in 5 runs in parallel
         def run_select_features(i):
             np.random.seed(i)
             train_idx = np.random.permutation(idx)[:int(0.8 * len(idx))]
-            return select_features(df_scaled.iloc[train_idx], target_sub[train_idx], True, eps=1e-8)
+            return select_features(df_scaled.iloc[train_idx], target_sub[train_idx], True, eps=1e-8, verbose=self.verbose)
         if self.n_jobs == 1:
             # only use parallelization code if you actually parallelize
             selected_columns = []
@@ -274,7 +286,8 @@ class AutoFeatRegression(object):
         selected_columns = Counter(selected_columns)
         original_features = list(df.columns)
         good_cols = [c for c in selected_columns if selected_columns[c] > 1 and c not in original_features]
-        print("[AutoFeatRegression] %i features occurred in more than one featsel run." % len(good_cols))
+        if self.verbose:
+            print("[AutoFeatRegression] %i features occurred in more than one featsel run." % len(good_cols))
         # train another regression model on these features
         df_scaled = df_scaled[original_features + good_cols]
         X = df_scaled.values
@@ -284,10 +297,12 @@ class AutoFeatRegression(object):
             reg.fit(X, target_sub)
         weights = dict(zip(list(df_scaled.columns), reg.coef_))
         good_cols = [c for c in weights if abs(weights[c]) >= 1e-6 and c not in original_features]
-        print("[AutoFeatRegression] %i new features selected." % len(good_cols))
+        if self.verbose:
+            print("[AutoFeatRegression] %i new features selected." % len(good_cols))
         # re-generate all good feature again; unscaled this time
         df = self._generate_features(df, good_cols)
-        print("[AutoFeatRegression] Training final regression model.")
+        if self.verbose:
+            print("[AutoFeatRegression] Training final regression model.")
         # train final regression model all selected features (twice)
         for i in range(2):
             X = df.values
@@ -299,25 +314,31 @@ class AutoFeatRegression(object):
             if not i:
                 self.new_feat_cols = [c for c in weights if abs(weights[c] * df[c].std()) >= 1e-6 and c not in original_features]
                 df = df[original_features + self.new_feat_cols]
-        # filter out unnecessary junk from self.feature_formulas
-        self.feature_formulas = {f: self.feature_formulas[f] for f in self.new_feat_cols + self.feateng_cols}
-        self.feature_functions = {f: self.feature_functions[f] for f in self.new_feat_cols}
-        print("[AutoFeatRegression] Trained model coefficients:")
-        print(reg.intercept_)
+        # filter out unnecessary junk from self.feature_formulas_
+        self.feature_formulas_ = {f: self.feature_formulas_[f] for f in self.new_feat_cols + self.feateng_cols}
+        self.feature_functions_ = {f: self.feature_functions_[f] for f in self.new_feat_cols}
+        if self.verbose:
+            print("[AutoFeatRegression] Trained model coefficients:")
+            print(reg.intercept_)
         for c in sorted(weights, key=lambda x: abs(weights[x]), reverse=True):
             if abs(weights[c]) < 1e-5:
                 break
-            print("%.6f * %s" % (weights[c], c))
-        print("[AutoFeatRegression] Final R^2: %.4f" % reg.score(X, target))
-        self.regression_model = reg
+            if self.verbose:
+                print("%.6f * %s" % (weights[c], c))
+        if self.verbose:
+            print("[AutoFeatRegression] Final R^2: %.4f" % reg.score(X, target))
+        self.regression_model_ = reg
         # final dataframe contains original columns, good additional columns, and target column
-        print("[AutoFeatRegression] Final dataframe with %i feature columns (%i new)." % (len(df.columns), len(df.columns) - len(original_features)))
+        if self.verbose:
+            print("[AutoFeatRegression] Final dataframe with %i feature columns (%i new)." % (len(df.columns), len(df.columns) - len(original_features)))
         return df
 
     def fit(self, X, y):
-        print("[AutoFeatRegression] Warning: This just calls fit_transform() but does not return the transformed dataframe.")
-        print("[AutoFeatRegression] It is much more efficient to call fit_transform() instead of fit() and transform()!")
+        if self.verbose:
+            print("[AutoFeatRegression] Warning: This just calls fit_transform() but does not return the transformed dataframe.")
+            print("[AutoFeatRegression] It is much more efficient to call fit_transform() instead of fit() and transform()!")
         _ = self.fit_transform(X, y)  # noqa
+        return self
 
     def transform(self, X):
         """
@@ -328,7 +349,8 @@ class AutoFeatRegression(object):
                       into multiple 0/1 columns) and the most promising engineered features. This df can then be
                       used to train your final model.
         """
-        assert self.regression_model is not None, "[AutoFeatRegression] First call fit or fit_transform to train the model!"
+        if self.regression_model_ is None:
+            raise RuntimeError("[AutoFeatRegression] First call fit or fit_transform to train the model!")
         # possibly transform X to a dataframe or copy to mess around with it
         if not isinstance(X, pd.DataFrame):
             df = pd.DataFrame(X, columns=["x%i" % i for i in range(10, 10 + X.shape[1])])
@@ -349,7 +371,8 @@ class AutoFeatRegression(object):
         Returns:
             - y_pred: vector of predicted targets return by regression_model.predict()
         """
-        assert self.regression_model is not None, "[AutoFeatRegression] First call fit or fit_transform to train the model!"
+        if self.regression_model_ is None:
+            raise RuntimeError("[AutoFeatRegression] First call fit or fit_transform to train the model!")
         # possibly transform X to a dataframe or copy to mess around with it
         if not isinstance(X, pd.DataFrame):
             df = pd.DataFrame(X, columns=["x%i" % i for i in range(10, 10 + X.shape[1])])
@@ -358,7 +381,7 @@ class AutoFeatRegression(object):
         # check if the dataframe was already transformed
         if not self.new_feat_cols[0] in df:
             df = self.transform(df)
-        return self.regression_model.predict(df.values)
+        return self.regression_model_.predict(df.values)
 
     def score(self, X, y):
         """
@@ -368,7 +391,8 @@ class AutoFeatRegression(object):
         Returns:
             - R^2 value returned by regression_model.score()
         """
-        assert self.regression_model is not None, "[AutoFeatRegression] First call fit or fit_transform to train the model!"
+        if self.regression_model_ is None:
+            raise RuntimeError("[AutoFeatRegression] First call fit or fit_transform to train the model!")
         # possibly transform X to a dataframe or copy to mess around with it
         if not isinstance(X, pd.DataFrame):
             df = pd.DataFrame(X, columns=["x%i" % i for i in range(10, 10 + X.shape[1])])
@@ -380,4 +404,4 @@ class AutoFeatRegression(object):
         # get the target as an array
         if isinstance(y, pd.DataFrame) or isinstance(y, pd.core.series.Series):
             y = y.values
-        return self.regression_model.score(df.values, y)
+        return self.regression_model_.score(df.values, y)
