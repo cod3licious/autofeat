@@ -317,7 +317,7 @@ class AutoFeatRegression(object):
     def fit(self, X, y):
         print("[AutoFeatRegression] Warning: This just calls fit_transform() but does not return the transformed dataframe.")
         print("[AutoFeatRegression] It is much more efficient to call fit_transform() instead of fit() and transform()!")
-        _ = self.fit_transform(X, y)
+        _ = self.fit_transform(X, y)  # noqa
 
     def transform(self, X):
         """
