@@ -59,6 +59,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         featsel_max_it=100,
         max_gb=None,
         transformations=("exp", "log", "abs", "sqrt", "^2", "^3", "1/"),
+        apply_pi_theorem=True,
         n_jobs=1,
         verbose=0,
     ):
@@ -86,6 +87,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             - transformations: list of transformations that should be applied; possible elements:
                                "exp", "log", "abs", "sqrt", "^2", "^3", "1/", "1+", "1-", "sin", "cos", "exp-", "2^"
                                (first 7, i.e., up to 1/, are applied by default)
+            - apply_pi_theorem: whether or not to apply the pi theorem (if units are given; bool; default: True)
             - n_jobs: how many jobs to run when selecting the features in parallel (int; default: 1)
             - verbose: verbosity level (int; default: 0)
 
@@ -107,6 +109,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         self.featsel_runs = featsel_runs
         self.featsel_max_it = featsel_max_it
         self.transformations = transformations
+        self.apply_pi_theorem = apply_pi_theorem
         self.n_jobs = n_jobs
         self.verbose = verbose
 
@@ -135,7 +138,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         return df
 
     def _apply_pi_theorem(self, df):
-        if self.units:
+        if self.apply_pi_theorem and self.units:
             ureg = pint.UnitRegistry(auto_reduce_dimensions=True, autoconvert_offset_to_baseunit=True)
             parsed_units = _parse_units(self.units, ureg, self.verbose)
             # use only original features
