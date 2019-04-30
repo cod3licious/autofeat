@@ -4,7 +4,6 @@
 
 from __future__ import unicode_literals, division, print_function, absolute_import
 from builtins import range
-import re
 import warnings
 from collections import Counter
 from joblib import Parallel, delayed
@@ -17,7 +16,7 @@ from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sympy.utilities.lambdify import lambdify
 import pint
 
-from .feateng import engineer_features, n_cols_generated
+from .feateng import engineer_features, n_cols_generated, colnames2symbols
 from .featsel import select_features
 
 
@@ -33,17 +32,18 @@ def _parse_units(units, ureg=None, verbose=0):
     Returns
         - parsed_units: dict with {"variable_name": pint Quantity}
     """
-    if ureg is None:
-        ureg = pint.UnitRegistry(auto_reduce_dimensions=True, autoconvert_offset_to_baseunit=True)
     parsed_units = {}
-    for c in units:
-        try:
-            parsed_units[c] = ureg.parse_expression(units[c])
-        except pint.UndefinedUnitError:
-            if verbose:
-                print("[AutoFeatRegression] WARNING: unit %r of column %r was not recognized and will be ignored!" % (units[c], c))
-            parsed_units[c] = ureg.parse_expression("")
-        parsed_units[c].__dict__["_magnitude"] = 1.
+    if units:
+        if ureg is None:
+            ureg = pint.UnitRegistry(auto_reduce_dimensions=True, autoconvert_offset_to_baseunit=True)
+        for c in units:
+            try:
+                parsed_units[c] = ureg.parse_expression(units[c])
+            except pint.UndefinedUnitError:
+                if verbose:
+                    print("[AutoFeatRegression] WARNING: unit %r of column %r was not recognized and will be ignored!" % (units[c], c))
+                parsed_units[c] = ureg.parse_expression("")
+            parsed_units[c].__dict__["_magnitude"] = 1.
     return parsed_units
 
 
@@ -72,7 +72,10 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             - feateng_cols: list of column names that should be used for the feature engineering part
                             (default None --> all except categorical_cols)
             - units: dictionary with {col_name: unit} where unit is a string that can be converted into a pint unit.
-                     all columns without units are dimensionless and can be combined with any other column
+                     all columns without units are dimensionless and can be combined with any other column.
+                     Note: it is assumed that all features are of comparable magnitude, i.e., not one variable is in
+                           m and another in mm. If this needs to be accounted for, please scale your variables before
+                           passing them to autofeat!
                      (default: None --> all columns are dimensionless).
             - feateng_steps: number of steps to perform in the feature engineering part (int; default: 3)
             - featsel_runs: number of times to perform in the feature selection part with a random fraction of data points (int; default: 5)
@@ -88,6 +91,8 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
 
         Attributes:
             - regression_model_: trained regression model
+            - original_columns_: original columns of X when calling fit
+            - feateng_cols_: actual columns used for the feature engineering
             - feature_formulas_: sympy formulas to generate new features
             - feature_functions_: compiled feature functions with columns
             - new_feat_cols_: list of good new features that should be generated when calling transform()
@@ -96,7 +101,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         """
         self.categorical_cols = categorical_cols
         self.feateng_cols = feateng_cols
-        self.units = units if units is not None else {}
+        self.units = units
         self.feateng_steps = feateng_steps
         self.max_gb = max_gb
         self.featsel_runs = featsel_runs
@@ -104,12 +109,6 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         self.transformations = transformations
         self.n_jobs = n_jobs
         self.verbose = verbose
-        # sympy formulas to generate new features
-        self.feature_formulas_ = {}
-        # compiled feature functions with columns
-        self.feature_functions_ = {}
-        # list of good new features that should be generated when calling transform()
-        self.new_feat_cols_ = []
 
     def __getstate__(self):
         """
@@ -117,28 +116,22 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         """
         return {k: self.__dict__[k] if k != "feature_functions_" else {} for k in self.__dict__}
 
-    def _transform_categorical_cols(self, df, cols=None):
+    def _transform_categorical_cols(self, df):
         """
         Transform categorical features into 0/1 encoding.
 
         Inputs:
             - df: pandas dataframe with original features
-            - cols: set of columns, from which the categorical_cols will be removed (optional)
         Returns:
             - df: dataframe with categorical features transformed into multiple 0/1 columns
-            - if cols was given: updated cols set
         """
         if self.categorical_cols:
             e = OneHotEncoder(sparse=False, categories="auto")
             for c in self.categorical_cols:
-                if cols:
-                    cols.remove(c)
                 ohe = e.fit_transform(df[c].values[:, None])
                 df = df.join(pd.DataFrame(ohe, columns=["%s_%r" % (str(c), i) for i in e.categories_[0]], index=df.index))
             # remove the categorical column from our columns to consider
             df.drop(columns=self.categorical_cols, inplace=True)
-        if cols is not None:
-            return df, cols
         return df
 
     def _apply_pi_theorem(self, df):
@@ -146,7 +139,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             ureg = pint.UnitRegistry(auto_reduce_dimensions=True, autoconvert_offset_to_baseunit=True)
             parsed_units = _parse_units(self.units, ureg, self.verbose)
             # use only original features
-            parsed_units = {c: parsed_units[c] for c in self.feateng_cols if not parsed_units[c].dimensionless}
+            parsed_units = {c: parsed_units[c] for c in self.feateng_cols_ if not parsed_units[c].dimensionless}
             if self.verbose:
                 print("[AutoFeatRegression] Applying the Pi Theorem")
             pi_theorem_results = ureg.pi_theorem(parsed_units)
@@ -172,6 +165,9 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         Returns:
             - df: dataframe with the additional feature columns added
         """
+        check_is_fitted(self, ['feature_functions_'])
+        if not new_feat_cols:
+            return df
         if not new_feat_cols[0] in self.feature_formulas_:
             raise RuntimeError("[AutoFeatRegression] First call fit or fit_transform to generate the features!")
         if self.verbose:
@@ -186,7 +182,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                 # for the given generated feature in good cols
                 # since sympy can handle only up to 32 original features in ufunctify, we need to check which features
                 # to consider here, therefore perform some crude check to limit the number of features used
-                cols = [c for c in self.feateng_cols if re.sub(r"\W+", "", c) in expr]
+                cols = [c for i, c in enumerate(self.feateng_cols_) if colnames2symbols(c, i) in expr]
                 try:
                     f = lambdify([self.feature_formulas_[c] for c in cols], self.feature_formulas_[expr])
                 except Exception:
@@ -198,7 +194,8 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             try:
                 feat_array[:, i] = f(*(df[c].values for c in cols))
             except RuntimeWarning:
-                print("[AutoFeatRegression] Problem while evaluating expression: %r with columns %r - are maybe some values 0 that shouldn't be?" % (expr, cols))
+                print("[AutoFeatRegression] WARNING: Problem while evaluating expression: %r with columns %r" % (expr, cols),
+                      " - is the data in a different range then when calling .fit()? Are maybe some values 0 that shouldn't be?")
                 raise
         if self.verbose:
             print("[AutoFeatRegression] %5i/%5i new features ...done." % (len(new_feat_cols), len(new_feat_cols)))
@@ -222,33 +219,36 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         Note: we strongly encourage you to name your features X1 ...  Xn or something simple like this before passing
               a DataFrame to this model. This can help avoid potential problems with sympy later on.
         """
+        # store column names as they'll be lost in the other check
+        cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
         # check input variables
-        if not isinstance(X, pd.DataFrame):
+        X, target = check_X_y(X, y, y_numeric=True)
+        if not cols:
             # the additional zeros in the name are because of the variable check in _generate_features,
             # where we check if the column name occurs in the the expression. this would lead to many
             # false positives if we have features x1 and x10...x19 instead of x001...x019.
             cols = ["x%03i" % i for i in range(X.shape[1])]
-        else:
-            cols = X.columns
-        # we need y as a numpy array later anyways
-        X, target = check_X_y(X, y, y_numeric=True)
+        self.original_columns_ = cols
         # transform X into a dataframe (again)
         df = pd.DataFrame(X, columns=cols)
         # possibly convert categorical columns
-        cols = set(cols)
-        df, cols = self._transform_categorical_cols(df, cols)
+        df = self._transform_categorical_cols(df)
         # if we're not given specific feateng_cols, then just take all columns except categorical
-        if not self.feateng_cols:
-            self.feateng_cols = sorted(cols)
+        if self.feateng_cols:
+            self.feateng_cols_ = self.feateng_cols
+        elif self.categorical_cols:
+            self.feateng_cols_ = [c for c in cols if c not in self.categorical_cols]
+        else:
+            self.feateng_cols_ = cols
         # convert units to proper pint units
         if self.units:
             # need units for only and all feateng columns
-            self.units = {c: self.units[c] if c in self.units else "" for c in self.feateng_cols}
+            self.units = {c: self.units[c] if c in self.units else "" for c in self.feateng_cols_}
             # apply pi-theorem -- additional columns are not used for regular feature engineering (for now)!
             df = self._apply_pi_theorem(df)
         # subsample data points and targets in case we'll generate too many features
         # (n_rows * n_cols * 32/8)/1000000000 <= max_gb
-        n_cols = n_cols_generated(len(self.feateng_cols), self.feateng_steps, len(self.transformations))
+        n_cols = n_cols_generated(len(self.feateng_cols_), self.feateng_steps, len(self.transformations))
         n_gb = (len(df) * n_cols) / 250000000
         if self.verbose:
             print("[AutoFeatRegression] The %i step feature engineering process could generate up to %i features." % (self.feateng_steps, n_cols))
@@ -265,7 +265,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             df_subs = df
             target_sub = target
         # generate features and scale to have 0 mean and unit std
-        df_scaled, self.feature_formulas_ = engineer_features(df_subs, self.feateng_cols, _parse_units(self.units, verbose=self.verbose),
+        df_scaled, self.feature_formulas_ = engineer_features(df_subs, self.feateng_cols_, _parse_units(self.units, verbose=self.verbose),
                                                               self.feateng_steps, self.transformations, self.verbose)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -277,11 +277,13 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         idx = list(df_scaled.index)
         if self.verbose:
             print("[AutoFeatRegression] Selecting good features in %i featsel runs" % self.featsel_runs)
+            if self.featsel_runs < df_scaled.shape[0]:
+                print("[AutoFeatRegression] WARNING: Less data points than featsel runs!!")
 
         # select good features in 5 runs in parallel
         def run_select_features(i):
             np.random.seed(i)
-            train_idx = np.random.permutation(idx)[:int(0.8 * len(idx))]
+            train_idx = np.random.permutation(idx)[:max(3, int(0.8 * len(idx)))]
             return select_features(df_scaled.iloc[train_idx], target_sub[train_idx], True, max_it=self.featsel_max_it, eps=1e-8, verbose=self.verbose)
         if self.n_jobs == 1:
             # only use parallelization code if you actually parallelize
@@ -311,6 +313,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         if self.verbose:
             print("[AutoFeatRegression] %i new features selected." % len(good_cols))
         # re-generate all good feature again; unscaled this time
+        self.feature_functions_ = {}
         df = self._generate_features(df, good_cols)
         if self.verbose:
             print("[AutoFeatRegression] Training final regression model.")
@@ -326,7 +329,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                 self.new_feat_cols_ = [c for c in weights if abs(weights[c] * df[c].std()) >= 1e-6 and c not in original_features]
                 df = df[original_features + self.new_feat_cols_]
         # filter out unnecessary junk from self.feature_formulas_
-        self.feature_formulas_ = {f: self.feature_formulas_[f] for f in self.new_feat_cols_ + self.feateng_cols}
+        self.feature_formulas_ = {f: self.feature_formulas_[f] for f in self.new_feat_cols_ + self.feateng_cols_}
         self.feature_functions_ = {f: self.feature_functions_[f] for f in self.new_feat_cols_}
         self.regression_model_ = reg
         if self.verbose:
@@ -358,12 +361,16 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                       used to train your final model.
         """
         check_is_fitted(self, ['regression_model_'])
-        # check input
-        if not isinstance(X, pd.DataFrame):
+        # store column names as they'll be lost in the other check
+        cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
+        # check input variables
+        X = check_array(X)
+        if not cols:
             cols = ["x%03i" % i for i in range(X.shape[1])]
-        else:
-            cols = X.columns
-        df = pd.DataFrame(check_array(X), columns=cols)
+        if not cols == self.original_columns_:
+            raise ValueError("[AutoFeatRegression] Not the same features as when calling fit.")
+        # transform X into a dataframe (again)
+        df = pd.DataFrame(X, columns=cols)
         # possibly convert categorical columns
         df = self._transform_categorical_cols(df)
         # possibly apply pi-theorem
@@ -380,14 +387,18 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             - y_pred: vector of predicted targets return by regression_model.predict()
         """
         check_is_fitted(self, ['regression_model_'])
-        # check input
-        if not isinstance(X, pd.DataFrame):
+        # store column names as they'll be lost in the other check
+        cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
+        # check input variables
+        X = check_array(X)
+        if not cols:
             cols = ["x%03i" % i for i in range(X.shape[1])]
-        else:
-            cols = X.columns
-        df = pd.DataFrame(check_array(X), columns=cols)
+        if not cols == self.original_columns_:
+            raise ValueError("[AutoFeatRegression] Not the same features as when calling fit.")
+        # transform X into a dataframe (again)
+        df = pd.DataFrame(X, columns=cols)
         # check if the dataframe was already transformed
-        if not self.new_feat_cols_[0] in df:
+        if self.new_feat_cols_ and not self.new_feat_cols_[0] in df:
             df = self.transform(df)
         return self.regression_model_.predict(df.values)
 
@@ -400,16 +411,17 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             - R^2 value returned by regression_model.score()
         """
         check_is_fitted(self, ['regression_model_'])
+        # store column names as they'll be lost in the other check
+        cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
         # check input variables
-        if not isinstance(X, pd.DataFrame):
-            cols = ["x%03i" % i for i in range(X.shape[1])]
-        else:
-            cols = X.columns
-        # we need y as a numpy array later anyways
         X, target = check_X_y(X, y, y_numeric=True)
+        if not cols:
+            cols = ["x%03i" % i for i in range(X.shape[1])]
+        if not cols == self.original_columns_:
+            raise ValueError("[AutoFeatRegression] Not the same features as when calling fit.")
         # transform X into a dataframe (again)
         df = pd.DataFrame(X, columns=cols)
         # check if the dataframe was already transformed
-        if not self.new_feat_cols_[0] in df:
+        if self.new_feat_cols_ and not self.new_feat_cols_[0] in df:
             df = self.transform(df)
         return self.regression_model_.score(df.values, y)

@@ -11,9 +11,22 @@ from itertools import combinations, product
 import numpy as np
 import pandas as pd
 import sympy
-#from sympy.utilities.autowrap import ufuncify
 from sympy.utilities.lambdify import lambdify
 import pint
+
+
+def colnames2symbols(c, i=0):
+    # take a messy column name and transform it to something sympy can handle
+    # worst case: i is the number of the features
+    # has to be a string
+    c = str(c)
+    # should not contain non-alphanumeric characters
+    c = re.sub(r"\W+", "", c)
+    if not c:
+        c = "x%03i" % i
+    elif c[0].isdigit():
+        c = "x" + c
+    return c
 
 
 def ncr(n, r):
@@ -112,7 +125,7 @@ def engineer_features(
     # initialize the feature pool with columns from the dataframe
     if not start_features:
         start_features = df_org.columns
-    feature_pool = {c: sympy.symbols(re.sub(r"\W+", "", c), real=True) for c in start_features}
+    feature_pool = {c: sympy.symbols(colnames2symbols(c, i), real=True) for i, c in enumerate(start_features)}
     if max_steps < 1:
         if verbose:
             print("[feateng] Warning: no features generated for max_steps < 1.")
