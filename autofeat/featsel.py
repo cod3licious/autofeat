@@ -5,20 +5,20 @@
 from __future__ import unicode_literals, division, print_function, absolute_import
 from builtins import zip
 import warnings
+from collections import Counter
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.preprocessing import StandardScaler
 import sklearn.linear_model as lm
 
 
-def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=0):
+def select_features_1run(df, target, max_it=100, eps=1e-16, verbose=0):
     """
     Inputs:
         - df: nxp pandas DataFrame with n data points and p features; to avoid overfitting, only provide data belonging
-              to the n training data points. The variables should be scaled to have 0 mean and unit variance. If this is
-              not the case, set df_scaled to False and it will be done for you.
+              to the n training data points. The variables have to be scaled to have 0 mean and unit variance.
         - target: n dimensional array with targets corresponding to the data points in df
-        - df_scaled: whether df is already scaled to have 0 mean and unit variance (bool; default: False)
         - max_it: how many iterations will be performed at most (int; default: 100)
         - eps: eps parameter for LassoLarsCV regression model (float; default: 1e-16;
                might need to increase that to ~1e-8 or 1e-5 if you get a warning)
@@ -26,18 +26,6 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=
     Returns:
         - good_cols: list of column names for df with which a regression model can be trained
     """
-    s = StandardScaler()
-    # for performance reasons the scaled data can already be given
-    if not df_scaled:
-        # scale features to have 0 mean and unit std
-        if verbose:
-            print("[featsel] Scaling data...", end="")
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            df = pd.DataFrame(s.fit_transform(df), columns=df.columns, dtype=np.float32)
-        if verbose:
-            print("done.")
-
     # split in training and test parts
     df_train = df[:max(3, int(0.8 * len(df)))]
     df_test = df[int(0.8 * len(df)):]
@@ -46,6 +34,7 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=
     if not (len(df_train) == len(target_train) and len(df_test) == len(target_test)):
         raise ValueError("[featsel] df and target dimension mismatch.")
 
+    scaler = StandardScaler()
     # good cols contains the currently considered good features (=columns)
     good_cols = []
     best_cols = []
@@ -68,7 +57,7 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=
         cols.difference_update(good_cols)
         cols_list = list(cols)
         # compute the absolute correlation of the (scaled) features with the (scaled) target variable
-        w = np.abs(np.dot(s.fit_transform(new_target[:, None])[:, 0], df_train[cols_list].to_numpy()))
+        w = np.abs(np.dot(scaler.fit_transform(new_target[:, None])[:, 0], df_train[cols_list].to_numpy()))
         # add promising features such that len(previous good cols + new cols) = thr
         good_cols.extend([cols_list[c] for c in np.argsort(w)[-(thr - len(good_cols)):]])
         # compute the regression residual based on the best features so far
@@ -88,3 +77,64 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=
     if verbose:
         print("[featsel] Iteration %3i; %3i selected features with residual: %.6f  --> done." % (it, len(best_cols), smallest_residual))
     return best_cols
+
+
+def select_features(df, target, featsel_runs=5, max_it=100, n_jobs=1, verbose=0):
+    """
+    Inputs:
+        - df: nxp pandas DataFrame with n data points and p features; to avoid overfitting, only provide data belonging
+              to the n training data points.
+        - target: n dimensional array with targets corresponding to the data points in df
+        - featsel_runs: number of times to perform in the feature selection part with a random fraction of data points (int; default: 5)
+        - max_it: how many iterations will be performed at most (int; default: 100)
+        - n_jobs: how many jobs to run when selecting the features in parallel (int; default: 1)
+        - verbose: verbosity level (int; default: 0)
+    Returns:
+        - good_cols: list of column names for df with which a regression model can be trained
+    """
+    # scale features to have 0 mean and unit std
+    if verbose:
+        if featsel_runs > df.shape[0]:
+            print("[featsel] WARNING: Less data points than featsel runs!!")
+        print("[featsel] Scaling data...", end="")
+    scaler = StandardScaler()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        df = pd.DataFrame(scaler.fit_transform(df), columns=df.columns, dtype=np.float32)
+    if verbose:
+        print("done.")
+
+    # select good features in 5 runs in parallel
+    # by doing sort of a cross-validation (i.e., randomly subsample data points)
+    def run_select_features(i):
+        np.random.seed(i)
+        rand_idx = np.random.permutation(df.index)
+        return select_features(df.iloc[rand_idx], target[rand_idx], max_it=max_it, eps=1e-8, verbose=verbose)
+    if n_jobs == 1:
+        # only use parallelization code if you actually parallelize
+        selected_columns = []
+        for i in range(featsel_runs):
+            selected_columns.extend(run_select_features(i))
+    else:
+        def flatten_lists(l):
+            return [item for sublist in l for item in sublist]
+
+        selected_columns = flatten_lists(Parallel(n_jobs=n_jobs, verbose=100)(delayed(run_select_features)(i) for i in range(featsel_runs)))
+
+    # check in how many runs each feature was selected and only takes those that were selected in more than one run
+    selected_columns = Counter(selected_columns)
+    good_cols = [c for c in selected_columns if selected_columns[c] > 1]
+    if verbose:
+        print("[featsel] %i features occurred in more than one featsel run." % len(good_cols))
+    # train another regression model on these features
+    df = df[good_cols]
+    X = df.to_numpy()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        reg = lm.LassoLarsCV(eps=1e-8)
+        reg.fit(X, target)
+    weights = dict(zip(list(df.columns), reg.coef_))
+    good_cols = [c for c in weights if abs(weights[c]) >= 1e-6]
+    if verbose:
+        print("[featsel] %i new features selected." % len(good_cols))
+    return good_cols

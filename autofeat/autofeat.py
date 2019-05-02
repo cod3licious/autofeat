@@ -5,8 +5,6 @@
 from __future__ import unicode_literals, division, print_function, absolute_import
 from builtins import range
 import warnings
-from collections import Counter
-from joblib import Parallel, delayed
 import numpy as np
 import pandas as pd
 import sklearn.linear_model as lm
@@ -133,6 +131,8 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         if self.categorical_cols:
             e = OneHotEncoder(sparse=False, categories="auto")
             for c in self.categorical_cols:
+                if c not in df.columns:
+                    raise ValueError("[AutoFeatRegression] categorical_col %r not in df.columns" % c)
                 ohe = e.fit_transform(df[c].to_numpy()[:, None])
                 df = df.join(pd.DataFrame(ohe, columns=["%s_%r" % (str(c), i) for i in e.categories_[0]], index=df.index))
             # remove the categorical column from our columns to consider
@@ -246,6 +246,9 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         df = self._transform_categorical_cols(df)
         # if we're not given specific feateng_cols, then just take all columns except categorical
         if self.feateng_cols:
+            for c in self.feateng_cols:
+                if c not in self.original_columns_:
+                    raise ValueError("[AutoFeatRegression] feateng_col %r not in df.columns" % c)
             self.feateng_cols_ = self.feateng_cols
         elif self.categorical_cols:
             self.feateng_cols_ = [c for c in cols if c not in self.categorical_cols]
@@ -275,55 +278,16 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         else:
             df_subs = df
             target_sub = target
-        # generate features and scale to have 0 mean and unit std
-        df_scaled, self.feature_formulas_ = engineer_features(df_subs, self.feateng_cols_, _parse_units(self.units, verbose=self.verbose),
-                                                              self.feateng_steps, self.transformations, self.verbose)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            s = StandardScaler()
-            df_scaled = pd.DataFrame(s.fit_transform(df_scaled), columns=df_scaled.columns, dtype=np.float32)
-        # do sort of a cross-validation (i.e., randomly subsample data points)
-        # to select features with high relevance
-        selected_columns = []
-        idx = list(df_scaled.index)
-        if self.verbose:
-            print("[AutoFeatRegression] Selecting good features in %i featsel runs" % self.featsel_runs)
-            if self.featsel_runs > df_scaled.shape[0]:
-                print("[AutoFeatRegression] WARNING: Less data points than featsel runs!!")
+        # generate features
+        df_eng, self.feature_formulas_ = engineer_features(df_subs, self.feateng_cols_, _parse_units(self.units, verbose=self.verbose),
+                                                           self.feateng_steps, self.transformations, self.verbose)
 
-        # select good features in 5 runs in parallel
-        def run_select_features(i):
-            np.random.seed(i)
-            rand_idx = np.random.permutation(idx)
-            return select_features(df_scaled.iloc[rand_idx], target_sub[rand_idx], True, max_it=self.featsel_max_it, eps=1e-8, verbose=self.verbose)
-        if self.n_jobs == 1:
-            # only use parallelization code if you actually parallelize
-            selected_columns = []
-            for i in range(self.featsel_runs):
-                selected_columns.extend(run_select_features(i))
-        else:
-            def flatten_lists(l):
-                return [item for sublist in l for item in sublist]
-
-            selected_columns = flatten_lists(Parallel(n_jobs=self.n_jobs, verbose=100)(delayed(run_select_features)(i) for i in range(self.featsel_runs)))
-        # check in how many runs each feature was selected and only takes those that were selected in more than one run
-        selected_columns = Counter(selected_columns)
+        # select feature
+        good_cols = select_features(df_eng, target_sub, self.featsel_runs, self.featsel_max_it, self.n_jobs, self.verbose)
+        # filter out those columns that were original features (which we want to keep anyways)
         original_features = list(df.columns)
-        good_cols = [c for c in selected_columns if selected_columns[c] > 1 and c not in original_features]
-        if self.verbose:
-            print("[AutoFeatRegression] %i features occurred in more than one featsel run." % len(good_cols))
-        # train another regression model on these features
-        df_scaled = df_scaled[original_features + good_cols]
-        X = df_scaled.to_numpy()
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            reg = lm.LassoLarsCV(eps=1e-8)
-            reg.fit(X, target_sub)
-        weights = dict(zip(list(df_scaled.columns), reg.coef_))
-        good_cols = [c for c in weights if abs(weights[c]) >= 1e-6 and c not in original_features]
-        if self.verbose:
-            print("[AutoFeatRegression] %i new features selected." % len(good_cols))
-        # re-generate all good feature again; unscaled this time
+        good_cols = [c for c in good_cols if c not in original_features]
+        # re-generate all good feature again; for all data points this time
         self.feature_functions_ = {}
         df = self._generate_features(df, good_cols)
         if self.verbose:

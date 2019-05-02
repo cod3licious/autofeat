@@ -125,6 +125,10 @@ def engineer_features(
     # initialize the feature pool with columns from the dataframe
     if not start_features:
         start_features = df_org.columns
+    else:
+        for c in start_features:
+            if c not in df_org.columns:
+                raise ValueError("[feateng] start feature %r not in df_org.columns" % c)
     feature_pool = {c: sympy.symbols(colnames2symbols(c, i), real=True) for i, c in enumerate(start_features)}
     if max_steps < 1:
         if verbose:
