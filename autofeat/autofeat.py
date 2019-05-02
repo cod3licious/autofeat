@@ -8,7 +8,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import sklearn.linear_model as lm
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sympy.utilities.lambdify import lambdify
@@ -172,7 +172,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         Returns:
             - df: dataframe with the additional feature columns added
         """
-        check_is_fitted(self, ['feature_functions_'])
+        check_is_fitted(self, ["feature_functions_"])
         if not new_feat_cols:
             return df
         if not new_feat_cols[0] in self.feature_formulas_:
@@ -335,7 +335,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                       into multiple 0/1 columns) and the most promising engineered features. This df can then be
                       used to train your final model.
         """
-        check_is_fitted(self, ['regression_model_'])
+        check_is_fitted(self, ["regression_model_"])
         # store column names as they'll be lost in the other check
         cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables
@@ -361,7 +361,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         Returns:
             - y_pred: vector of predicted targets return by regression_model.predict()
         """
-        check_is_fitted(self, ['regression_model_'])
+        check_is_fitted(self, ["regression_model_"])
         # store column names as they'll be lost in the other check
         cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables
@@ -385,7 +385,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         Returns:
             - R^2 value returned by regression_model.score()
         """
-        check_is_fitted(self, ['regression_model_'])
+        check_is_fitted(self, ["regression_model_"])
         # store column names as they'll be lost in the other check
         cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables

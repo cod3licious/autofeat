@@ -10,10 +10,12 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 from sklearn.preprocessing import StandardScaler
+from sklearn.base import BaseEstimator
+from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 import sklearn.linear_model as lm
 
 
-def select_features_1run(df, target, max_it=100, eps=1e-16, verbose=0):
+def _select_features_1run(df, target, max_it=100, eps=1e-16, verbose=0):
     """
     Inputs:
         - df: nxp pandas DataFrame with n data points and p features; to avoid overfitting, only provide data belonging
@@ -109,7 +111,7 @@ def select_features(df, target, featsel_runs=5, max_it=100, n_jobs=1, verbose=0)
     def run_select_features(i):
         np.random.seed(i)
         rand_idx = np.random.permutation(df.index)
-        return select_features(df.iloc[rand_idx], target[rand_idx], max_it=max_it, eps=1e-8, verbose=verbose)
+        return _select_features_1run(df.iloc[rand_idx], target[rand_idx], max_it=max_it, eps=1e-8, verbose=verbose)
     if n_jobs == 1:
         # only use parallelization code if you actually parallelize
         selected_columns = []
@@ -138,3 +140,91 @@ def select_features(df, target, featsel_runs=5, max_it=100, n_jobs=1, verbose=0)
     if verbose:
         print("[featsel] %i new features selected." % len(good_cols))
     return good_cols
+
+
+class FeatureSelector(BaseEstimator):
+
+    def __init__(
+        self,
+        featsel_runs=5,
+        max_it=100,
+        n_jobs=1,
+        verbose=0,
+    ):
+        """
+        multi-step cross-validated feature selection
+
+        Inputs:
+            - featsel_runs: number of times to perform in the feature selection part with a random fraction of data points (int; default: 5)
+            - max_it: maximum number of iterations for the feature selection (int; default 100)
+            - n_jobs: how many jobs to run when selecting the features in parallel (int; default: 1)
+            - verbose: verbosity level (int; default: 0)
+
+        Attributes:
+            - good_cols_: list of good features (to select via pandas DataFrame columns)
+            - original_columns_: original columns of X when calling fit
+            - return_df_: whether fit was called with a dataframe in which case a df will be returned as well,
+                          otherwise a numpy array
+        """
+        self.featsel_runs = featsel_runs
+        self.max_it = max_it
+        self.n_jobs = n_jobs
+        self.verbose = verbose
+
+    def fit(self, X, y):
+        """
+        Selects features.
+
+        Inputs:
+            - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
+            - y: pandas dataframe or numpy array with one target variable for all n_datapoints
+        """
+        self.return_df_ = isinstance(X, pd.DataFrame)
+        # store column names as they'll be lost in the other check
+        cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
+        # check input variables
+        X, target = check_X_y(X, np.ravel(y), y_numeric=True)
+        if not cols:
+            cols = ["x%i" % i for i in range(X.shape[1])]
+        self.original_columns_ = cols
+        # transform X into a dataframe (again)
+        df = pd.DataFrame(X, columns=cols)
+        # do the feature selection
+        self.good_cols_ = select_features(df, target, self.featsel_runs, self.max_it, self.n_jobs, self.verbose)
+
+    def transform(self, X):
+        """
+        Inputs:
+            - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
+        Returns:
+            - new_X: new pandas dataframe or numpy array with only the good features
+        """
+        check_is_fitted(self, ["good_cols_"])
+        # store column names as they'll be lost in the other check
+        cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
+        # check input variables
+        X = check_array(X, force_all_finite="allow-nan")
+        if not cols:
+            cols = ["x%i" % i for i in range(X.shape[1])]
+        if not cols == self.original_columns_:
+            raise ValueError("[AutoFeatRegression] Not the same features as when calling fit.")
+        # transform X into a dataframe (again) and select columns
+        new_X = pd.DataFrame(X, columns=cols)[self.good_cols_]
+        # possibly transform into a numpy array
+        if not self.return_df_:
+            new_X = np.ravel(new_X)
+        return new_X
+
+    def fit_transform(self, X, y):
+        """
+        Selects features and returns only those selected.
+
+        Inputs:
+            - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
+            - y: pandas dataframe or numpy array with one target variable for all n_datapoints
+        Returns:
+            - new_X: new pandas dataframe or numpy array with only the good features
+        """
+        if not hasattr(self, "good_cols_"):
+            self.fit(X, y)
+        return self.transform(X)
