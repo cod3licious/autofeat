@@ -94,6 +94,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         Attributes:
             - regression_model_: trained regression model
             - original_columns_: original columns of X when calling fit
+            - all_columns_: columns of X after calling fit
             - feateng_cols_: actual columns used for the feature engineering
             - feature_formulas_: sympy formulas to generate new features
             - feature_functions_: compiled feature functions with columns
@@ -233,7 +234,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         # store column names as they'll be lost in the other check
         cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables
-        X, target = check_X_y(X, np.ravel(y), y_numeric=True)
+        X, target = check_X_y(X, y, y_numeric=True)
         if not cols:
             # the additional zeros in the name are because of the variable check in _generate_features,
             # where we check if the column name occurs in the the expression. this would lead to many
@@ -279,34 +280,30 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             df_subs = df
             target_sub = target
         # generate features
-        df_eng, self.feature_formulas_ = engineer_features(df_subs, self.feateng_cols_, _parse_units(self.units, verbose=self.verbose),
-                                                           self.feateng_steps, self.transformations, self.verbose)
+        df_subs, self.feature_formulas_ = engineer_features(df_subs, self.feateng_cols_, _parse_units(self.units, verbose=self.verbose),
+                                                            self.feateng_steps, self.transformations, self.verbose)
 
         # select feature
-        good_cols = select_features(df_eng, target_sub, self.featsel_runs, self.featsel_max_it, self.n_jobs, self.verbose)
+        good_cols = select_features(df_subs, target_sub, self.featsel_runs, self.featsel_max_it, self.n_jobs, self.verbose)
         # filter out those columns that were original features (which we want to keep anyways)
-        original_features = list(df.columns)
-        good_cols = [c for c in good_cols if c not in original_features]
+        self.new_feat_cols_ = [c for c in good_cols if c not in list(df.columns)]
         # re-generate all good feature again; for all data points this time
         self.feature_functions_ = {}
-        df = self._generate_features(df, good_cols)
+        df = self._generate_features(df, self.new_feat_cols_)
+        # train final regression model all selected features
         if self.verbose:
             print("[AutoFeatRegression] Training final regression model.")
-        # train final regression model all selected features (twice)
-        for i in range(2):
-            X = df.to_numpy()
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                reg = lm.LassoLarsCV(eps=1e-16)
-                reg.fit(X, target)
-            weights = dict(zip(list(df.columns), reg.coef_))
-            if not i:
-                self.new_feat_cols_ = [c for c in weights if abs(weights[c] * df[c].std()) >= 1e-6 and c not in original_features]
-                df = df[original_features + self.new_feat_cols_]
+        X = df.to_numpy()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            reg = lm.LassoLarsCV(eps=1e-16)
+            reg.fit(X, target)
+        weights = dict(zip(list(df.columns), reg.coef_))
         # filter out unnecessary junk from self.feature_formulas_
         self.feature_formulas_ = {f: self.feature_formulas_[f] for f in self.new_feat_cols_ + self.feateng_cols_}
         self.feature_functions_ = {f: self.feature_functions_[f] for f in self.new_feat_cols_}
         self.regression_model_ = reg
+        self.all_columns_ = list(df.columns)
         if self.verbose:
             print("[AutoFeatRegression] Trained model: largest coefficients:")
             print(reg.intercept_)
@@ -316,7 +313,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                 print("%.6f * %s" % (weights[c], c))
             print("[AutoFeatRegression] Final R^2: %.4f" % reg.score(X, target))
             # final dataframe contains original columns, good additional columns, and target column
-            print("[AutoFeatRegression] Final dataframe with %i feature columns (%i new)." % (len(df.columns), len(df.columns) - len(original_features)))
+            print("[AutoFeatRegression] Final dataframe with %i feature columns (%i new)." % (len(df.columns), len(df.columns) - len(self.original_columns_)))
         return df
 
     def fit(self, X, y):
@@ -368,12 +365,10 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         X = check_array(X)
         if not cols:
             cols = ["x%03i" % i for i in range(X.shape[1])]
-        if not cols == self.original_columns_:
-            raise ValueError("[AutoFeatRegression] Not the same features as when calling fit.")
         # transform X into a dataframe (again)
         df = pd.DataFrame(X, columns=cols)
-        # check if the dataframe was already transformed
-        if self.new_feat_cols_ and not self.new_feat_cols_[0] in df:
+        # do we need to call transform?
+        if not list(df.columns) == self.all_columns_:
             df = self.transform(df)
         return self.regression_model_.predict(df.to_numpy())
 
@@ -389,14 +384,12 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         # store column names as they'll be lost in the other check
         cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables
-        X, target = check_X_y(X, np.ravel(y), y_numeric=True)
+        X, target = check_X_y(X, y, y_numeric=True)
         if not cols:
             cols = ["x%03i" % i for i in range(X.shape[1])]
-        if not cols == self.original_columns_:
-            raise ValueError("[AutoFeatRegression] Not the same features as when calling fit.")
         # transform X into a dataframe (again)
         df = pd.DataFrame(X, columns=cols)
-        # check if the dataframe was already transformed
-        if self.new_feat_cols_ and not self.new_feat_cols_[0] in df:
+        # do we need to call transform?
+        if not list(df.columns) == self.all_columns_:
             df = self.transform(df)
         return self.regression_model_.score(df.to_numpy(), y)

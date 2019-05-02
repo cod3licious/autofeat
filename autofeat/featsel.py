@@ -102,7 +102,7 @@ def select_features(df, target, featsel_runs=5, max_it=100, n_jobs=1, verbose=0)
     scaler = StandardScaler()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        df = pd.DataFrame(scaler.fit_transform(df), columns=df.columns, dtype=np.float32)
+        df_scaled = pd.DataFrame(scaler.fit_transform(df), columns=df.columns, dtype=np.float32)
     if verbose:
         print("done.")
 
@@ -110,34 +110,55 @@ def select_features(df, target, featsel_runs=5, max_it=100, n_jobs=1, verbose=0)
     # by doing sort of a cross-validation (i.e., randomly subsample data points)
     def run_select_features(i):
         np.random.seed(i)
-        rand_idx = np.random.permutation(df.index)
-        return _select_features_1run(df.iloc[rand_idx], target[rand_idx], max_it=max_it, eps=1e-8, verbose=verbose)
-    if n_jobs == 1:
-        # only use parallelization code if you actually parallelize
-        selected_columns = []
-        for i in range(featsel_runs):
-            selected_columns.extend(run_select_features(i))
-    else:
-        def flatten_lists(l):
-            return [item for sublist in l for item in sublist]
+        rand_idx = np.random.permutation(df_scaled.index)
+        return _select_features_1run(df_scaled.iloc[rand_idx], target[rand_idx], max_it=max_it, eps=1e-8, verbose=verbose)
+    good_cols = []
+    if featsel_runs >= 1:
+        if n_jobs == 1:
+            # only use parallelization code if you actually parallelize
+            selected_columns = []
+            for i in range(featsel_runs):
+                selected_columns.extend(run_select_features(i))
+        else:
+            def flatten_lists(l):
+                return [item for sublist in l for item in sublist]
 
-        selected_columns = flatten_lists(Parallel(n_jobs=n_jobs, verbose=100)(delayed(run_select_features)(i) for i in range(featsel_runs)))
+            selected_columns = flatten_lists(Parallel(n_jobs=n_jobs, verbose=100)(delayed(run_select_features)(i) for i in range(featsel_runs)))
 
-    # check in how many runs each feature was selected and only takes those that were selected in more than one run
-    selected_columns = Counter(selected_columns)
-    good_cols = [c for c in selected_columns if selected_columns[c] > 1]
-    if verbose:
-        print("[featsel] %i features occurred in more than one featsel run." % len(good_cols))
+        # check in how many runs each feature was selected and only takes those that were selected in more than one run
+        selected_columns = Counter(selected_columns)
+        good_cols = [c for c in selected_columns if selected_columns[c] > 1]
+        if not good_cols:
+            good_cols = [c for c in selected_columns]
+        if verbose:
+            print("[featsel] %i features occurred in more than one featsel run." % len(good_cols))
+    if not good_cols:
+        good_cols = list(df.columns)
     # train another regression model on these features
-    df = df[good_cols]
-    X = df.to_numpy()
+    df_scaled = df_scaled[good_cols]
+    X = df_scaled.to_numpy()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         reg = lm.LassoLarsCV(eps=1e-8)
         reg.fit(X, target)
-    weights = dict(zip(list(df.columns), reg.coef_))
+    weights = dict(zip(list(df_scaled.columns), reg.coef_))
     good_cols = [c for c in weights if abs(weights[c]) >= 1e-6]
+    if not good_cols:
+        if verbose:
+            print("[featsel] WARNING: Not a single good features was found...")
+        return []
+    # train again a regression model, but this time on the original (unscaled) data
+    df = df[good_cols]
+    X = df.to_numpy()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        reg = lm.LassoLarsCV(eps=1e-16)
+        reg.fit(X, target)
+    weights = dict(zip(list(df.columns), reg.coef_))
+    good_cols = [c for c in weights if abs(weights[c] * df[c].std()) >= 1e-6]
     if verbose:
+        if not good_cols:
+            print("[featsel] WARNING: Not a single good features was found...")
         print("[featsel] %i new features selected." % len(good_cols))
     return good_cols
 
@@ -183,7 +204,7 @@ class FeatureSelector(BaseEstimator):
         # store column names as they'll be lost in the other check
         cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
         # check input variables
-        X, target = check_X_y(X, np.ravel(y), y_numeric=True)
+        X, target = check_X_y(X, y, y_numeric=True)
         if not cols:
             cols = ["x%i" % i for i in range(X.shape[1])]
         self.original_columns_ = cols
@@ -191,6 +212,7 @@ class FeatureSelector(BaseEstimator):
         df = pd.DataFrame(X, columns=cols)
         # do the feature selection
         self.good_cols_ = select_features(df, target, self.featsel_runs, self.max_it, self.n_jobs, self.verbose)
+        return self
 
     def transform(self, X):
         """
@@ -200,6 +222,9 @@ class FeatureSelector(BaseEstimator):
             - new_X: new pandas dataframe or numpy array with only the good features
         """
         check_is_fitted(self, ["good_cols_"])
+        if not self.good_cols_:
+            print("[FeatureSelector] WARNING: No good features found; returning data unchanged.")
+            return X
         # store column names as they'll be lost in the other check
         cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
         # check input variables
@@ -207,12 +232,12 @@ class FeatureSelector(BaseEstimator):
         if not cols:
             cols = ["x%i" % i for i in range(X.shape[1])]
         if not cols == self.original_columns_:
-            raise ValueError("[AutoFeatRegression] Not the same features as when calling fit.")
+            raise ValueError("[FeatureSelector] Not the same features as when calling fit.")
         # transform X into a dataframe (again) and select columns
         new_X = pd.DataFrame(X, columns=cols)[self.good_cols_]
         # possibly transform into a numpy array
         if not self.return_df_:
-            new_X = np.ravel(new_X)
+            new_X = new_X.to_numpy()
         return new_X
 
     def fit_transform(self, X, y):
