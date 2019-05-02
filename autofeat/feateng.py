@@ -211,7 +211,7 @@ def engineer_features(
                         t = sympy.symbols("t")
                         expr_temp = func_transform[ft](t)
                         f = lambdify(t, expr_temp)
-                        new_feat = np.array(f(df[feat].values), dtype=np.float32)
+                        new_feat = np.array(f(df[feat].to_numpy()), dtype=np.float32)
                         if np.isfinite(new_feat).all():
                             feat_array[:, len(new_features)] = new_feat
                             new_features.append(expr_name)
@@ -254,7 +254,7 @@ def engineer_features(
                     s, t = sympy.symbols("s t")
                     expr_temp = func_combinations[fc](s, t)
                     f = lambdify((s, t), expr_temp)
-                    new_feat = np.array(f(df[feat1].values, df[feat2].values), dtype=np.float32)
+                    new_feat = np.array(f(df[feat1].to_numpy(), df[feat2].to_numpy()), dtype=np.float32)
                     if np.isfinite(new_feat).all():
                         feat_array[:, len(new_features)] = new_feat
                         new_features.append(expr_name)
@@ -305,4 +305,6 @@ def engineer_features(
 
     # sort out all features that are just additions on the highest level
     cols = [c for c in list(df.columns) if not (c in feature_pool and feature_pool[c].func == sympy.add.Add)]
+    if verbose:
+        print("[feateng] Generated a total of %i additional features" % (len(cols) - len(start_features)))
     return df[cols], feature_pool

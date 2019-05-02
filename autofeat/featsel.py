@@ -38,14 +38,22 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=
         if verbose:
             print("done.")
 
+    # split in training and test parts
+    df_train = df[:max(3, int(0.8 * len(df)))]
+    df_test = df[int(0.8 * len(df)):]
+    target_train = target[:max(3, int(0.8 * len(df)))]
+    target_test = target[int(0.8 * len(df)):]
+    if not (len(df_train) == len(target_train) and len(df_test) == len(target_test)):
+        raise ValueError("[featsel] df and target dimension mismatch.")
+
     # good cols contains the currently considered good features (=columns)
     good_cols = []
     best_cols = []
     # we want to select up to thr features (how much a regression model is comfortable with)
-    thr = int(0.5 * df.shape[0])
+    thr = int(0.5 * df_train.shape[0])
     # our first target is the original target variable; later we operate on (target - predicted_target)
-    new_target = target
-    residual = np.mean(np.abs(target))
+    new_target = target_train
+    residual = np.mean(np.abs(target_test))
     last_residuals = np.zeros(max_it)
     smallest_residual = 10. * residual
     it = 0
@@ -56,21 +64,21 @@ def select_features(df, target, df_scaled=False, max_it=100, eps=1e-16, verbose=
         last_residuals[it] = residual
         it += 1
         # select new possibly good columns from all but the currently considered good columns
-        cols = set(df.columns)
+        cols = set(df_train.columns)
         cols.difference_update(good_cols)
         cols_list = list(cols)
         # compute the absolute correlation of the (scaled) features with the (scaled) target variable
-        w = np.abs(np.dot(s.fit_transform(new_target[:, None])[:, 0], df[cols_list].values))
+        w = np.abs(np.dot(s.fit_transform(new_target[:, None])[:, 0], df_train[cols_list].to_numpy()))
         # add promising features such that len(previous good cols + new cols) = thr
         good_cols.extend([cols_list[c] for c in np.argsort(w)[-(thr - len(good_cols)):]])
         # compute the regression residual based on the best features so far
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             reg = lm.LassoLarsCV(eps=eps)
-            X = df[good_cols].values
-            reg.fit(X, target)
-        new_target = target - reg.predict(X)
-        residual = np.mean(np.abs(new_target))
+            X = df_train[good_cols].to_numpy()
+            reg.fit(X, target_train)
+        new_target = target_train - reg.predict(X)
+        residual = np.mean(np.abs(target_test - reg.predict(df_test[good_cols].to_numpy())))
         # update the good columns based on the regression coefficients
         weights = dict(zip(good_cols, reg.coef_))
         good_cols = [c for c in weights if abs(weights[c]) > 1e-6]

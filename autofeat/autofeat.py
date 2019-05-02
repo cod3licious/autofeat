@@ -84,6 +84,8 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             - max_gb: if an int is given: maximum number of gigabytes to use in the process (i.e. mostly the
                       feature engineering part). this is no guarantee! it will lead to subsampling of the
                       data points if the new dataframe generated is n_rows * n_cols * 32bit > max_gb
+                      Note: this is only an approximate estimate of the final matrix; intermediate representations could easily
+                            take up at least 2 or 3 times that much space...If you can, subsample before, you know your data best.
             - transformations: list of transformations that should be applied; possible elements:
                                "exp", "log", "abs", "sqrt", "^2", "^3", "1/", "1+", "1-", "sin", "cos", "exp-", "2^"
                                (first 7, i.e., up to 1/, are applied by default)
@@ -131,7 +133,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         if self.categorical_cols:
             e = OneHotEncoder(sparse=False, categories="auto")
             for c in self.categorical_cols:
-                ohe = e.fit_transform(df[c].values[:, None])
+                ohe = e.fit_transform(df[c].to_numpy()[:, None])
                 df = df.join(pd.DataFrame(ohe, columns=["%s_%r" % (str(c), i) for i in e.categories_[0]], index=df.index))
             # remove the categorical column from our columns to consider
             df.drop(columns=self.categorical_cols, inplace=True)
@@ -151,10 +153,12 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                     print("[AutoFeatRegression] Pi Theorem %i: " % i, pint.formatter(r.items()))
                 # compute the final result by multiplying and taking the power of
                 cols = sorted(r)
-                ptr = df[cols[0]].values**r[cols[0]]
+                # only use data points where non of the affected columns are NaNs
+                not_na_idx = df[cols].notna().all(axis=1)
+                ptr = df[cols[0]].to_numpy()[not_na_idx]**r[cols[0]]
                 for c in cols[1:]:
-                    ptr *= df[c].values**r[c]
-                df["PT%i_%s" % (i, pint.formatter(r.items()).replace(" ", ""))] = ptr
+                    ptr *= df[c].to_numpy()[not_na_idx]**r[c]
+                df.loc[not_na_idx, "PT%i_%s" % (i, pint.formatter(r.items()).replace(" ", ""))] = ptr
         return df
 
     def _generate_features(self, df, new_feat_cols):
@@ -194,8 +198,11 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                 self.feature_functions_[expr] = (cols, f)
             else:
                 cols, f = self.feature_functions_[expr]
+            # only generate features for completely not-nan rows
+            not_na_idx = df[cols].notna().all(axis=1)
             try:
-                feat_array[:, i] = f(*(df[c].values for c in cols))
+                feat_array[not_na_idx, i] = f(*(df[c].to_numpy()[not_na_idx] for c in cols))
+                feat_array[~not_na_idx, i] = np.nan
             except RuntimeWarning:
                 print("[AutoFeatRegression] WARNING: Problem while evaluating expression: %r with columns %r" % (expr, cols),
                       " - is the data in a different range then when calling .fit()? Are maybe some values 0 that shouldn't be?")
@@ -221,11 +228,12 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
 
         Note: we strongly encourage you to name your features X1 ...  Xn or something simple like this before passing
               a DataFrame to this model. This can help avoid potential problems with sympy later on.
+              The data should only contain finite values (no NaNs etc.)
         """
         # store column names as they'll be lost in the other check
-        cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
+        cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables
-        X, target = check_X_y(X, y, y_numeric=True)
+        X, target = check_X_y(X, np.ravel(y), y_numeric=True)
         if not cols:
             # the additional zeros in the name are because of the variable check in _generate_features,
             # where we check if the column name occurs in the the expression. this would lead to many
@@ -280,14 +288,14 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         idx = list(df_scaled.index)
         if self.verbose:
             print("[AutoFeatRegression] Selecting good features in %i featsel runs" % self.featsel_runs)
-            if self.featsel_runs < df_scaled.shape[0]:
+            if self.featsel_runs > df_scaled.shape[0]:
                 print("[AutoFeatRegression] WARNING: Less data points than featsel runs!!")
 
         # select good features in 5 runs in parallel
         def run_select_features(i):
             np.random.seed(i)
-            train_idx = np.random.permutation(idx)[:max(3, int(0.8 * len(idx)))]
-            return select_features(df_scaled.iloc[train_idx], target_sub[train_idx], True, max_it=self.featsel_max_it, eps=1e-8, verbose=self.verbose)
+            rand_idx = np.random.permutation(idx)
+            return select_features(df_scaled.iloc[rand_idx], target_sub[rand_idx], True, max_it=self.featsel_max_it, eps=1e-8, verbose=self.verbose)
         if self.n_jobs == 1:
             # only use parallelization code if you actually parallelize
             selected_columns = []
@@ -306,7 +314,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             print("[AutoFeatRegression] %i features occurred in more than one featsel run." % len(good_cols))
         # train another regression model on these features
         df_scaled = df_scaled[original_features + good_cols]
-        X = df_scaled.values
+        X = df_scaled.to_numpy()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             reg = lm.LassoLarsCV(eps=1e-8)
@@ -322,7 +330,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             print("[AutoFeatRegression] Training final regression model.")
         # train final regression model all selected features (twice)
         for i in range(2):
-            X = df.values
+            X = df.to_numpy()
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 reg = lm.LassoLarsCV(eps=1e-16)
@@ -365,9 +373,9 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         """
         check_is_fitted(self, ['regression_model_'])
         # store column names as they'll be lost in the other check
-        cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
+        cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables
-        X = check_array(X)
+        X = check_array(X, force_all_finite="allow-nan")
         if not cols:
             cols = ["x%03i" % i for i in range(X.shape[1])]
         if not cols == self.original_columns_:
@@ -391,7 +399,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         """
         check_is_fitted(self, ['regression_model_'])
         # store column names as they'll be lost in the other check
-        cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
+        cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables
         X = check_array(X)
         if not cols:
@@ -403,7 +411,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         # check if the dataframe was already transformed
         if self.new_feat_cols_ and not self.new_feat_cols_[0] in df:
             df = self.transform(df)
-        return self.regression_model_.predict(df.values)
+        return self.regression_model_.predict(df.to_numpy())
 
     def score(self, X, y):
         """
@@ -415,9 +423,9 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         """
         check_is_fitted(self, ['regression_model_'])
         # store column names as they'll be lost in the other check
-        cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
+        cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables
-        X, target = check_X_y(X, y, y_numeric=True)
+        X, target = check_X_y(X, np.ravel(y), y_numeric=True)
         if not cols:
             cols = ["x%03i" % i for i in range(X.shape[1])]
         if not cols == self.original_columns_:
@@ -427,4 +435,4 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         # check if the dataframe was already transformed
         if self.new_feat_cols_ and not self.new_feat_cols_[0] in df:
             df = self.transform(df)
-        return self.regression_model_.score(df.values, y)
+        return self.regression_model_.score(df.to_numpy(), y)
