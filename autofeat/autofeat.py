@@ -52,7 +52,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         categorical_cols=None,
         feateng_cols=None,
         units=None,
-        feateng_steps=3,
+        feateng_steps=2,
         featsel_runs=5,
         featsel_max_it=100,
         featsel_w_thr=1e-4,
@@ -77,7 +77,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                            m and another in mm. If this needs to be accounted for, please scale your variables before
                            passing them to autofeat!
                      (default: None --> all columns are dimensionless).
-            - feateng_steps: number of steps to perform in the feature engineering part (int; default: 3)
+            - feateng_steps: number of steps to perform in the feature engineering part (int; default: 2)
             - featsel_runs: number of times to perform in the feature selection part with a random fraction of data points (int; default: 5)
             - featsel_max_it: maximum number of iterations for the feature selection (int; default 100)
             - featsel_w_thr: threshold on the final Lasso model weights to filter the features (float; default: 1e-4)
