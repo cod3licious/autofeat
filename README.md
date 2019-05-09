@@ -13,7 +13,7 @@ In addition, only the feature selection part is also available in the `FeatureSe
 
 Both the `AutoFeatRegression` and `FeatureSelector` models need to be **fit on data without NaNs**, as they internally call the sklearn `LassoLarsCV` model, which can not handle NaNs. When calling `transform()`, NaNs (but not `np.inf`) are okay.
 
-The [notebook](https://github.com/cod3licious/autofeat/blob/master/autofeat_examples.ipynb) contains a simple usage example - try it out! :) The testing scripts contain some additional examples.
+The [autofeat examples notebook](https://github.com/cod3licious/autofeat/blob/master/autofeat_examples.ipynb) contains a simple usage example - try it out! :) Additional examples can be found in the [autofeat benchmark notebook](https://github.com/cod3licious/autofeat/blob/master/autofeat_benchmark.ipynb) (which also contains the code to reproduce the results from the paper mentioned below) as well as the testing scripts.
 
 Please keep in mind that since the `AutoFeatRegression` model can generate very complex features, it will likely **overfit on noise** in the dataset, though the coefficients for features related to noise should be fairly small. It is generally suggested to carefully inspect the features found by `autofeat` and use those that make sense to you to train your own models.
 
@@ -42,4 +42,4 @@ The library requires Python 3! Other dependencies: `numpy`, `pandas`, `scikit-le
 
 ## Acknowledgments
 
-This project was made possible thanks to support by the [BASF](https://www.basf.com).
+This project was made possible thanks to support by [BASF](https://www.basf.com).
