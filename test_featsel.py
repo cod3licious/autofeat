@@ -44,7 +44,7 @@ def test_regular_df_X_y():
     fsel = FeatureSelector(verbose=0)
     new_X = fsel.fit_transform(pd.DataFrame(X), pd.DataFrame(target))
     assert isinstance(new_X, pd.DataFrame)
-    assert list(new_X.columns) == [0, 5, 6], "Wrong features selected"
+    assert set(new_X.columns) == set([0, 5, 6]), "Wrong features selected"
 
 
 def test_df_X_y():
@@ -53,7 +53,7 @@ def test_df_X_y():
     fsel = FeatureSelector(verbose=0)
     new_X = fsel.fit_transform(pd.DataFrame(X, columns=[1, 2, "3", "x4", "x5", "eng6", "eng7"]), pd.DataFrame(target))
     assert isinstance(new_X, pd.DataFrame)
-    assert list(new_X.columns) == [1, "eng6", "eng7"], "Wrong features selected"
+    assert set(new_X.columns) == set([1, "eng6", "eng7"]), "Wrong features selected"
 
 
 def test_nans():

@@ -55,6 +55,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         feateng_steps=3,
         featsel_runs=5,
         featsel_max_it=100,
+        featsel_w_thr=1e-4,
         max_gb=None,
         transformations=("exp", "log", "abs", "sqrt", "^2", "^3", "1/"),
         apply_pi_theorem=True,
@@ -79,6 +80,8 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
             - feateng_steps: number of steps to perform in the feature engineering part (int; default: 3)
             - featsel_runs: number of times to perform in the feature selection part with a random fraction of data points (int; default: 5)
             - featsel_max_it: maximum number of iterations for the feature selection (int; default 100)
+            - featsel_w_thr: threshold on the final Lasso model weights to filter the features (float; default: 1e-4)
+                             If this is 0 or less, no feature selection will be performed!
             - max_gb: if an int is given: maximum number of gigabytes to use in the process (i.e. mostly the
                       feature engineering part). this is no guarantee! it will lead to subsampling of the
                       data points if the new dataframe generated is n_rows * n_cols * 32bit > max_gb
@@ -109,6 +112,7 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         self.max_gb = max_gb
         self.featsel_runs = featsel_runs
         self.featsel_max_it = featsel_max_it
+        self.featsel_w_thr = featsel_w_thr
         self.transformations = transformations
         self.apply_pi_theorem = apply_pi_theorem
         self.n_jobs = n_jobs
@@ -191,23 +195,28 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                 # since sympy can handle only up to 32 original features in ufunctify, we need to check which features
                 # to consider here, therefore perform some crude check to limit the number of features used
                 cols = [c for i, c in enumerate(self.feateng_cols_) if colnames2symbols(c, i) in expr]
-                try:
-                    f = lambdify([self.feature_formulas_[c] for c in cols], self.feature_formulas_[expr])
-                except Exception:
-                    print("[AutoFeatRegression] Error while processing expression: %r" % expr)
-                    raise
+                if not cols:
+                    # this can happen if no features were selected and the expr is "E" (i.e. the constant e)
+                    f = None
+                else:
+                    try:
+                        f = lambdify([self.feature_formulas_[c] for c in cols], self.feature_formulas_[expr])
+                    except Exception:
+                        print("[AutoFeatRegression] Error while processing expression: %r" % expr)
+                        raise
                 self.feature_functions_[expr] = (cols, f)
             else:
                 cols, f = self.feature_functions_[expr]
-            # only generate features for completely not-nan rows
-            not_na_idx = df[cols].notna().all(axis=1)
-            try:
-                feat_array[not_na_idx, i] = f(*(df[c].to_numpy()[not_na_idx] for c in cols))
-                feat_array[~not_na_idx, i] = np.nan
-            except RuntimeWarning:
-                print("[AutoFeatRegression] WARNING: Problem while evaluating expression: %r with columns %r" % (expr, cols),
-                      " - is the data in a different range then when calling .fit()? Are maybe some values 0 that shouldn't be?")
-                raise
+            if f is not None:
+                # only generate features for completely not-nan rows
+                not_na_idx = df[cols].notna().all(axis=1)
+                try:
+                    feat_array[not_na_idx, i] = f(*(df[c].to_numpy()[not_na_idx] for c in cols))
+                    feat_array[~not_na_idx, i] = np.nan
+                except RuntimeWarning:
+                    print("[AutoFeatRegression] WARNING: Problem while evaluating expression: %r with columns %r" % (expr, cols),
+                          " - is the data in a different range then when calling .fit()? Are maybe some values 0 that shouldn't be?")
+                    raise
         if self.verbose:
             print("[AutoFeatRegression] %5i/%5i new features ...done." % (len(new_feat_cols), len(new_feat_cols)))
         df = df.join(pd.DataFrame(feat_array, columns=new_feat_cols, index=df.index))
@@ -284,7 +293,12 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                                                             self.feateng_steps, self.transformations, self.verbose)
 
         # select feature
-        good_cols = select_features(df_subs, target_sub, self.featsel_runs, self.featsel_max_it, self.n_jobs, self.verbose)
+        if self.featsel_w_thr <= 0:
+            if self.verbose:
+                print("[AutoFeatRegression] WARNING: Not performing feature selection.")
+            good_cols = df_subs.columns
+        else:
+            good_cols = select_features(df_subs, target_sub, self.featsel_runs, self.featsel_max_it, self.featsel_w_thr, self.n_jobs, self.verbose)
         # filter out those columns that were original features (which we want to keep anyways)
         self.new_feat_cols_ = [c for c in good_cols if c not in list(df.columns)]
         # re-generate all good feature again; for all data points this time
