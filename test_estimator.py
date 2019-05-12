@@ -159,4 +159,4 @@ def check_estimator_autofeat(Estimator):
     check_parameters_default_constructible(name, Estimator)
     check_no_attributes_set_in_init(name, estimator)
     # check with fewer feateng steps and featsel runs to speed things up
-    check_estimator(Estimator(feateng_steps=1, featsel_runs=1))
+    check_estimator(Estimator(feateng_steps=1, featsel_runs=1, featsel_max_it=20))

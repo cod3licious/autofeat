@@ -53,8 +53,8 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         feateng_cols=None,
         units=None,
         feateng_steps=2,
-        featsel_runs=5,
-        featsel_max_it=100,
+        featsel_runs=3,
+        featsel_max_it=150,
         featsel_w_thr=1e-4,
         max_gb=None,
         transformations=("exp", "log", "abs", "sqrt", "^2", "^3", "1/"),
@@ -78,8 +78,8 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                            passing them to autofeat!
                      (default: None --> all columns are dimensionless).
             - feateng_steps: number of steps to perform in the feature engineering part (int; default: 2)
-            - featsel_runs: number of times to perform in the feature selection part with a random fraction of data points (int; default: 5)
-            - featsel_max_it: maximum number of iterations for the feature selection (int; default 100)
+            - featsel_runs: number of times to perform in the feature selection part with a random fraction of data points (int; default: 3)
+            - featsel_max_it: maximum number of iterations for the feature selection (int; default 150)
             - featsel_w_thr: threshold on the final Lasso model weights to filter the features (float; default: 1e-4)
                              If this is 0 or less, no feature selection will be performed!
             - max_gb: if an int is given: maximum number of gigabytes to use in the process (i.e. mostly the
@@ -298,7 +298,8 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
                 print("[AutoFeatRegression] WARNING: Not performing feature selection.")
             good_cols = df_subs.columns
         else:
-            good_cols = select_features(df_subs, target_sub, self.featsel_runs, self.featsel_max_it, self.featsel_w_thr, self.n_jobs, self.verbose)
+            good_cols = select_features(df_subs, target_sub, self.featsel_runs, self.featsel_max_it, self.featsel_w_thr,
+                                        list(df.columns), self.n_jobs, self.verbose)
         # filter out those columns that were original features (which we want to keep anyways)
         self.new_feat_cols_ = [c for c in good_cols if c not in list(df.columns)]
         # re-generate all good feature again; for all data points this time
@@ -311,6 +312,9 @@ class AutoFeatRegression(BaseEstimator, RegressorMixin):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             reg = lm.LassoLarsCV(eps=1e-16)
+            reg.fit(X, target)
+            # alphas in CV are generally chosen a bit too small
+            reg = lm.LassoLars(alpha=1.5*reg.alpha_, eps=1e-16)
             reg.fit(X, target)
         weights = dict(zip(list(df.columns), reg.coef_))
         # filter out unnecessary junk from self.feature_formulas_

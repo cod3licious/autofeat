@@ -3,6 +3,6 @@
 # License: MIT
 
 name = "autofeat"
-__version__ = "0.2.2"
+__version__ = "0.2.5"
 from .autofeat import AutoFeatRegression  # noqa
 from .featsel import FeatureSelector  # noqa

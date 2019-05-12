@@ -51,7 +51,7 @@ def test_df_X_y():
     # featsel with df with column names
     X, target = get_random_data()
     fsel = FeatureSelector(verbose=0)
-    new_X = fsel.fit_transform(pd.DataFrame(X, columns=[1, 2, "3", "x4", "x5", "eng6", "eng7"]), pd.DataFrame(target))
+    new_X = fsel.fit_transform(pd.DataFrame(X, columns=[1, 2, "3", "x4", "x5", "eng6", "eng7"]), target)
     assert isinstance(new_X, pd.DataFrame)
     assert set(new_X.columns) == set([1, "eng6", "eng7"]), "Wrong features selected"
 
@@ -59,19 +59,20 @@ def test_df_X_y():
 def test_nans():
     # featsel with df without column names
     X, target = get_random_data()
-    X[98, 0] = np.nan
-    X[99, 1] = np.nan
+    X[998, 0] = np.nan
+    X[999, 1] = np.nan
     fsel = FeatureSelector(verbose=0)
     try:
-        _ = fsel.fit(pd.DataFrame(X), pd.DataFrame(target))
+        _ = fsel.fit(pd.DataFrame(X), target)
     except ValueError:
         pass
     else:
         raise AssertionError("fit with NaNs should throw an error")
-    _ = fsel.fit_transform(pd.DataFrame(X[:90]), pd.DataFrame(target[:90]))
+    _ = fsel.fit_transform(pd.DataFrame(X[:900]), target[:900])
     df = fsel.transform(pd.DataFrame(X))
-    assert pd.isna(df[0].iloc[98]), "The first feature should be NaN"
+    assert pd.isna(df[0].iloc[998]), "The first feature should be NaN"
     assert np.sum(pd.isna(df).to_numpy(dtype=int)) == 1, "only 1 place should be NaN"
+    assert set(df.columns) == set([0, 5, 6]), "Wrong features selected"
 
 
 if __name__ == '__main__':
