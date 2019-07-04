@@ -19,11 +19,27 @@ Please keep in mind that since the `AutoFeatRegression` model can generate very 
 
 Depending on the number of `feateng_steps` (default 2) and the number of input features, `autofeat` can generate a very huge feature matrix (before selecting the most appropriate features from this large feature pool). By specifying in `feateng_cols` those columns that you expect to be most valuable in the feature engineering part, the number of features can be greatly reduced. Additionally, `transformations` can be limited to only those feature transformations that make sense for your data. Last but not least, you can subsample the data used for training the model to limit the memory requirements. After the model was fit, you can call `transform()` on your whole dataset to generate only those few features that were selected during `fit()`/`fit_transform()`.
 
+#### What if I have a (binary) classification problem?
+
+(UNTESTED!) While the `autofeat` library is intended for regression problems (with a single target variable), you could also use the model to generate additional features for a binary classification problem (i.e. where your target variable is a 1D vector with only a 0 or 1 for each data point). After calling `fit_transform()` on the `AutoFeatRegression` model to generate the additional features, these can be used as input to your favorite classification model to get the actual class label predictions. It may happen that during the model-fit you get an error due to numerical instabilities. In this case you can try using as targets the class probabilities (i.e. what you get when calling `predict_proba()` on a `sklearn` classifier) instead of the binary labels.
+
+Since the `AutoFeatRegression` model only works for a single target variable, it can't handle multi-class problems, but you could transform a multi-class problem into several 1-vs-rest binary classification problems and then generate features for each of these individually.
+
+
+## Installation
+You either download the code from here and include the autofeat folder in your `$PYTHONPATH` or install (the library components only) via pip:
+
+    $ pip install autofeat
+
+The library requires Python 3! Other dependencies: `numpy`, `pandas`, `scikit-learn`, `sympy`, `joblib`, and `pint`
+
+
+## Paper
 For further details on the model and implementation please refer to the [paper](https://arxiv.org/abs/1901.07329)  - and of course if any of this code was helpful for your research, please consider citing it:
 ```
     @article{horn2019autofeat,
       author    = {Horn, Franziska and Pack, Robert and Rieger, Michael},
-      title     = {The autofeat Python Library for Automatic Feature Engineering and Selection},
+      title     = {The autofeat Python Library for Automated Feature Engineering and Selection},
       year      = {2019},
       journal   = {arXiv preprint arXiv:1901.07329},
     }
@@ -32,13 +48,6 @@ For further details on the model and implementation please refer to the [paper](
 The code is intended for research purposes.
 
 If you have any questions please don't hesitate to send me an [email](mailto:cod3licious@gmail.com) and of course if you should find any bugs or want to contribute other improvements, pull requests are very welcome!
-
-## Installation
-You either download the code from here and include the autofeat folder in your `$PYTHONPATH` or install (the library components only) via pip:
-
-    $ pip install autofeat
-
-The library requires Python 3! Other dependencies: `numpy`, `pandas`, `scikit-learn`, `sympy`, `joblib`, and `pint`
 
 ## Acknowledgments
 
