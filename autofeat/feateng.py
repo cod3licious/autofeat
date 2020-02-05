@@ -92,7 +92,7 @@ def engineer_features(
     start_features=None,
     units=None,
     max_steps=3,
-    transformations=("exp", "log", "abs", "sqrt", "^2", "^3", "1/"),
+    transformations=("1/", "exp", "log", "abs", "sqrt", "^2", "^3"),
     verbose=0,
 ):
     """
@@ -115,8 +115,8 @@ def engineer_features(
             (Step 4: combination of old and new features)
             --> with 3 original features, after 4 steps you will already end up with around 200k features!
         - transformations: list of transformations that should be applied; possible elements:
-                           "exp", "log", "abs", "sqrt", "^2", "^3", "1/", "1+", "1-", "sin", "cos", "exp-", "2^"
-                           (first 7, i.e., up to 1/, are applied by default)
+                           "1/", "exp", "log", "abs", "sqrt", "^2", "^3", "1+", "1-", "sin", "cos", "exp-", "2^"
+                           (first 7, i.e., up to ^3, are applied by default)
         - verbose: verbosity level (int; default: 0)
     Returns:
         - df: new DataFrame with all features in columns
@@ -190,6 +190,7 @@ def engineer_features(
         nonlocal df, feature_pool, units
         # returns a list of new features that were generated
         new_features = []
+        uncorr_features = set()
         # store all new features in a preallocated numpy array before adding it to the dataframe
         feat_array = np.zeros((df.shape[0], len(features_list) * len(transformations)), dtype=np.float32)
         for i, feat in enumerate(features_list):
@@ -216,13 +217,20 @@ def engineer_features(
                         expr_temp = func_transform[ft](t)
                         f = lambdify(t, expr_temp)
                         new_feat = np.array(f(df[feat].to_numpy()), dtype=np.float32)
-                        if np.isfinite(new_feat).all():
-                            feat_array[:, len(new_features)] = new_feat
-                            new_features.append(expr_name)
+                        # near 0 variance test - sometimes all that's left is "e"
+                        if np.isfinite(new_feat).all() and np.var(new_feat) > 1e-10:
+                            corr = abs(np.corrcoef(new_feat, df[feat])[0, 1])
+                            if corr < 1.:
+                                feat_array[:, len(new_features)] = new_feat
+                                new_features.append(expr_name)
+                                # correlation test: don't include features that are basically the same as the original features
+                                # but we only filter them out at the end, since they still might help in other steps!
+                                if corr < 0.95:
+                                    uncorr_features.add(expr_name)
         if verbose:
             print("[feateng] Generated %i transformed features from %i original features - done." % (len(new_features), len(features_list)))
         df = df.join(pd.DataFrame(feat_array[:, :len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
-        return new_features
+        return new_features, uncorr_features
 
     def get_feature_combinations(feature_tuples):
         # new features as combinations of two other features
@@ -237,6 +245,7 @@ def engineer_features(
         nonlocal df, feature_pool, units
         # returns a list of new features that were generated
         new_features = []
+        uncorr_features = set()
         # store all new features in a preallocated numpy array before adding it to the dataframe
         feat_array = np.zeros((df.shape[0], len(feature_tuples) * len(func_combinations)), dtype=np.float32)
         for i, (feat1, feat2) in enumerate(feature_tuples):
@@ -259,56 +268,70 @@ def engineer_features(
                     expr_temp = func_combinations[fc](s, t)
                     f = lambdify((s, t), expr_temp)
                     new_feat = np.array(f(df[feat1].to_numpy(), df[feat2].to_numpy()), dtype=np.float32)
-                    if np.isfinite(new_feat).all():
-                        feat_array[:, len(new_features)] = new_feat
-                        new_features.append(expr_name)
+                    # near 0 variance test - sometimes all that's left is "e"
+                    if np.isfinite(new_feat).all() and np.var(new_feat) > 1e-10:
+                        corr = max(abs(np.corrcoef(new_feat, df[feat1])[0, 1]), abs(np.corrcoef(new_feat, df[feat2])[0, 1]))
+                        if corr < 1.:
+                            feat_array[:, len(new_features)] = new_feat
+                            new_features.append(expr_name)
+                            # correlation test: don't include features that are basically the same as the original features
+                            # but we only filter them out at the end, since they still might help in other steps!
+                            if corr < 0.95:
+                                uncorr_features.add(expr_name)
         if verbose:
             print("[feateng] Generated %i feature combinations from %i original feature tuples - done." % (len(new_features), len(feature_tuples)))
         df = df.join(pd.DataFrame(feat_array[:, :len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
-        return new_features
+        return new_features, uncorr_features
 
     # get transformations of initial features
     steps = 1
     if verbose:
         print("[feateng] Step 1: transformation of original features")
     original_features = list(feature_pool.keys())
-    original_features.extend(apply_tranformations(original_features))
+    uncorr_features = set(feature_pool.keys())
+    temp_new, temp_uncorr = apply_tranformations(original_features)
+    original_features.extend(temp_new)
+    uncorr_features.update(temp_uncorr)
     steps += 1
     # get combinations of first feature set
     if steps <= max_steps:
         if verbose:
             print("[feateng] Step 2: first combination of features")
-        new_features = get_feature_combinations(list(combinations(original_features, 2)))
+        new_features, temp_uncorr = get_feature_combinations(list(combinations(original_features, 2)))
+        uncorr_features.update(temp_uncorr)
         steps += 1
     while steps <= max_steps:
         # apply transformations on these new features
         if verbose:
             print("[feateng] Step %i: transformation of new features" % steps)
-        new_features.extend(apply_tranformations(new_features))
+        temp_new, temp_uncorr = apply_tranformations(new_features)
+        new_features.extend(temp_new)
+        uncorr_features.update(temp_uncorr)
         steps += 1
         # get combinations of old and new features
         if steps <= max_steps:
             if verbose:
-                print("[feateng] Step %i: combination of old and new features" % steps)
-            new_new_features = get_feature_combinations(list(product(original_features, new_features)))
+                print("[feateng] Step %i: combining old and new features" % steps)
+            new_new_features, temp_uncorr = get_feature_combinations(list(product(original_features, new_features)))
+            uncorr_features.update(temp_uncorr)
             steps += 1
         # and combinations of new features within themselves
         if steps <= max_steps:
             if verbose:
-                print("[feateng] Step %i: combination of new features" % steps)
-            new_new_features.extend(get_feature_combinations(list(combinations(new_features, 2))))
+                print("[feateng] Step %i: combining new features" % steps)
+            temp_new, temp_uncorr = get_feature_combinations(list(combinations(new_features, 2)))
+            new_new_features.extend(temp_new)
+            uncorr_features.update(temp_uncorr)
             steps += 1
             # update old and new features and repeat
             original_features.extend(new_features)
             new_features = new_new_features
-    # finally, apply transformation on the last new features
-    if steps <= max_steps:
-        if verbose:
-            print("[feateng] Step %i: transformation of last new features" % steps)
-        new_features.extend(apply_tranformations(new_features))
 
-    # sort out all features that are just additions on the highest level
-    cols = [c for c in list(df.columns) if not (c in feature_pool and feature_pool[c].func == sympy.add.Add)]
+    # sort out all features that are just additions on the highest level or correlated with more basic features
     if verbose:
-        print("[feateng] Generated a total of %i additional features" % (len(cols) - len(start_features)))
+        print("[feateng] Removing %i correlated features, as well as additions at the highest level" % (len(feature_pool) - len(uncorr_features)))
+    feature_pool = {c: feature_pool[c] for c in feature_pool if c in uncorr_features and not feature_pool[c].func == sympy.add.Add}
+    cols = [c for c in list(df.columns) if c in feature_pool or c in df_org.columns]  # categorical cols not in feature_pool
+    if verbose:
+        print("[feateng] Generated a total of %i additional features" % (len(feature_pool) - len(start_features)))
     return df[cols], feature_pool
