@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import sympy
 from sympy.utilities.lambdify import lambdify
+from sklearn.preprocessing import StandardScaler
 import pint
 
 
@@ -137,7 +138,7 @@ def engineer_features(
     # get a copy of the dataframe - this is where all the features will be added
     df = pd.DataFrame(df_org.copy(), dtype=np.float32)
 
-    def apply_tranformations(features_list):
+    def apply_transformations(features_list):
         # feature transformations
         func_transform = {
             "exp": lambda x: sympy.exp(x),
@@ -289,7 +290,7 @@ def engineer_features(
         print("[feateng] Step 1: transformation of original features")
     original_features = list(feature_pool.keys())
     uncorr_features = set(feature_pool.keys())
-    temp_new, temp_uncorr = apply_tranformations(original_features)
+    temp_new, temp_uncorr = apply_transformations(original_features)
     original_features.extend(temp_new)
     uncorr_features.update(temp_uncorr)
     steps += 1
@@ -304,7 +305,7 @@ def engineer_features(
         # apply transformations on these new features
         if verbose:
             print("[feateng] Step %i: transformation of new features" % steps)
-        temp_new, temp_uncorr = apply_tranformations(new_features)
+        temp_new, temp_uncorr = apply_transformations(new_features)
         new_features.extend(temp_new)
         uncorr_features.update(temp_uncorr)
         steps += 1
@@ -329,9 +330,14 @@ def engineer_features(
 
     # sort out all features that are just additions on the highest level or correlated with more basic features
     if verbose:
-        print("[feateng] Removing %i correlated features, as well as additions at the highest level" % (len(feature_pool) - len(uncorr_features)))
+        print("[feateng] Removing correlated features, as well as additions at the highest level")
     feature_pool = {c: feature_pool[c] for c in feature_pool if c in uncorr_features and not feature_pool[c].func == sympy.add.Add}
-    cols = [c for c in list(df.columns) if c in feature_pool or c in df_org.columns]  # categorical cols not in feature_pool
+    cols = [c for c in list(df.columns) if c in feature_pool and c not in df_org.columns]  # categorical cols not in feature_pool
+    if cols:
+        # check for correlated features again; this time with the start features
+        corrs = dict(zip(cols, np.max(np.abs(np.dot(StandardScaler().fit_transform(df[cols]).T, StandardScaler().fit_transform(df_org))/df_org.shape[0]), axis=1)))
+        cols = [c for c in cols if corrs[c] < 0.9]
+    cols = list(df_org.columns) + cols
     if verbose:
         print("[feateng] Generated a total of %i additional features" % (len(feature_pool) - len(start_features)))
     return df[cols], feature_pool

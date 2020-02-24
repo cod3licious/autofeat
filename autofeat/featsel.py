@@ -25,7 +25,7 @@ def _add_noise_features(X):
         - X with additional noise features
     """
     n_feat = X.shape[1]
-    if X.shape[0] > 50:
+    if X.shape[0] > 50 and n_feat > 1:
         # shuffled features
         rand_noise = StandardScaler().fit_transform(np.random.permutation(X.flatten()).reshape(X.shape))
         X = np.hstack([X, rand_noise])
@@ -53,23 +53,33 @@ def _noise_filtering(X, target, good_cols=[], problem_type="regression"):
     if not good_cols:
         good_cols = list(range(n_feat))
     # perform noise filtering on these features
-    X = _add_noise_features(X)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        if problem_type == "regression":
-            model = lm.LassoLarsCV(cv=5, eps=1e-16)
-            model.fit(X, target)
-        elif problem_type == "classification":
-            # TODO
-            model = None
-        else:
-            print("[featsel] WARNING: Unknown problem_type %r - not performing noise filtering." % problem_type)
-            model = None
+    if problem_type == "regression":
+        model = lm.LassoLarsCV(cv=5, eps=1e-8)
+    elif problem_type == "classification":
+        model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced")
+    else:
+        print("[featsel] WARNING: Unknown problem_type %r - not performing noise filtering." % problem_type)
+        model = None
     if model is not None:
-        weights = dict(zip(good_cols, model.coef_[:len(good_cols)]))
+        X = _add_noise_features(X)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            # TODO: remove if sklearn least_angle issue is fixed
+            try:
+                model.fit(X, target)
+            except ValueError:
+                rand_idx = np.random.permutation(X.shape[0])
+                model.fit(X[rand_idx], target[rand_idx])
+            # model.fit(X, target)
+        if problem_type == "regression":
+            coefs = np.abs(model.coef_)
+        else:
+            # model.coefs_ is n_classes x n_features, but we need n_features
+            coefs = np.max(np.abs(model.coef_), axis=0)
+        weights = dict(zip(good_cols, coefs[:len(good_cols)]))
         # only include features that are more important than our known noise features
-        noise_w_thr = np.max(np.abs(model.coef_[n_feat:]))
-        good_cols = [c for c in good_cols if abs(weights[c]) > noise_w_thr]
+        noise_w_thr = np.max(coefs[n_feat:])
+        good_cols = [c for c in good_cols if weights[c] > noise_w_thr]
     return good_cols
 
 
@@ -87,18 +97,33 @@ def _select_features_1run(df, target, problem_type="regression", verbose=0):
         - good_cols: list of column names for df with which a prediction model can be trained
     """
     # initial selection of too few but (hopefully) relevant features
+    if problem_type == "regression":
+        model = lm.LassoLarsCV(cv=5, eps=1e-8)
+    elif problem_type == "classification":
+        model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced")
+    else:
+        print("[featsel] WARNING: Unknown problem_type %r - not performing feature selection!" % problem_type)
+        return []
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        if problem_type == "regression":
-            model = lm.OrthogonalMatchingPursuitCV(cv=5, max_iter=min(df.shape[0]//4, df.shape[1]))
-        elif problem_type == "classification":
-            # TODO
-            model = None
-        else:
-            print("[featsel] WARNING: Unknown problem_type %r - not performing feature selection!" % problem_type)
-            return []
-        model.fit(df, target)
-    initial_cols = list(df.columns[np.abs(model.coef_) > 1e-8])
+        # TODO: remove if sklearn least_angle issue is fixed
+        try:
+            model.fit(df, target)
+        except ValueError:
+            # try once more with shuffled data, if it still doesn't work, give up
+            rand_idx = np.random.permutation(df.shape[0])
+            model.fit(df.iloc[rand_idx], target[rand_idx])
+        # model.fit(df, target)
+    if problem_type == "regression":
+        coefs = np.abs(model.coef_)
+    else:
+        # model.coefs_ is n_classes x n_features, but we need n_features
+        coefs = np.max(np.abs(model.coef_), axis=0)
+    # weight threshold: select at most 0.2*n_train initial features
+    thr = sorted(coefs, reverse=True)[min(df.shape[1]-1, df.shape[0]//5)]
+    initial_cols = list(df.columns[coefs > thr])
+    # noise filter
+    initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, problem_type)
     good_cols = set(initial_cols)
     if verbose > 0:
         print("[featsel]\t %i initial features." % len(initial_cols))
@@ -112,18 +137,28 @@ def _select_features_1run(df, target, problem_type="regression", verbose=0):
         for i in range(n_splits):
             current_cols = other_cols[i*split_size:min(len(other_cols), (i+1)*split_size)]
             X = np.hstack([df[current_cols].to_numpy(), X_w_noise])
+            if problem_type == "regression":
+                model = lm.LassoLarsCV(cv=5, eps=1e-8)
+            else:
+                model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced")
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                if problem_type == "regression":
-                    model = lm.LassoLarsCV(cv=5, eps=1e-8)
-                else:
-                    # TODO
-                    model = None
-                model.fit(X, target)
+                # TODO: remove if sklearn least_angle issue is fixed
+                try:
+                    model.fit(X, target)
+                except ValueError:
+                    rand_idx = np.random.permutation(X.shape[0])
+                    model.fit(X[rand_idx], target[rand_idx])
+                # model.fit(X, target)
             current_cols.extend(initial_cols)
-            weights = dict(zip(current_cols, model.coef_[:len(current_cols)]))
+            if problem_type == "regression":
+                coefs = np.abs(model.coef_)
+            else:
+                # model.coefs_ is n_classes x n_features, but we need n_features
+                coefs = np.max(np.abs(model.coef_), axis=0)
+            weights = dict(zip(current_cols, coefs[:len(current_cols)]))
             # only include features that are more important than our known noise features
-            noise_w_thr = np.max(np.abs(model.coef_[len(current_cols):]))
+            noise_w_thr = np.max(coefs[len(current_cols):])
             good_cols.update([c for c in weights if abs(weights[c]) > noise_w_thr])
             if verbose > 0:
                 print("[featsel]\t Split %2i/%i: %3i candidate features identified." % (i+1, n_splits, len(good_cols)), end="\r")
@@ -155,6 +190,8 @@ def select_features(df, target, featsel_runs=5, keep=None, problem_type="regress
         raise ValueError("[featsel] df and target dimension mismatch.")
     if keep is None:
         keep = []
+    # check that keep columns are actually in df (- the columns might have been transformed to strings!)
+    keep = [c for c in keep if c in df.columns and not str(c) in df.columns] + [str(c) for c in keep if str(c) in df.columns]
     # scale features to have 0 mean and unit std
     if verbose > 0:
         if featsel_runs > df.shape[0]:
@@ -258,9 +295,11 @@ class FeatureSelector(BaseEstimator):
         """
         self.return_df_ = isinstance(X, pd.DataFrame)
         # store column names as they'll be lost in the other check
-        cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
+        # first calling np.array assures that all the column names have the same dtype
+        # as otherwise we get problems when calling np.random.permutation on the columns
+        cols = list(np.array(list(X.columns))) if isinstance(X, pd.DataFrame) else []
         # check input variables
-        X, target = check_X_y(X, y, y_numeric=True, multi_output=(self.problem_type == "classification" and y.shape[1] > 1))
+        X, target = check_X_y(X, y, y_numeric=self.problem_type == "regression")
         if not cols:
             cols = ["x%i" % i for i in range(X.shape[1])]
         self.original_columns_ = cols
@@ -283,7 +322,9 @@ class FeatureSelector(BaseEstimator):
                 print("[FeatureSelector] WARNING: No good features found; returning data unchanged.")
             return X
         # store column names as they'll be lost in the other check
-        cols = list(X.columns) if isinstance(X, pd.DataFrame) else []
+        # first calling np.array assures that all the column names have the same dtype
+        # as otherwise we get problems when calling np.random.permutation on the columns
+        cols = list(np.array(list(X.columns))) if isinstance(X, pd.DataFrame) else []
         # check input variables
         X = check_array(X, force_all_finite="allow-nan")
         if not cols:
