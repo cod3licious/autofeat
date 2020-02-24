@@ -38,7 +38,7 @@ def _parse_units(units, ureg=None, verbose=0):
             try:
                 parsed_units[c] = ureg.parse_expression(units[c])
             except pint.UndefinedUnitError:
-                if verbose:
+                if verbose > 0:
                     print("[AutoFeat] WARNING: unit %r of column %r was not recognized and will be ignored!" % (units[c], c))
                 parsed_units[c] = ureg.parse_expression("")
             parsed_units[c].__dict__["_magnitude"] = 1.
@@ -69,9 +69,9 @@ class AutoFeatModel(BaseEstimator):
         Inputs:
             - problem_type: str, either "regression" or "classification" (default: "regression")
             - categorical_cols: list of column names of categorical features; these will be transformed into
-                                0/1 encoding and not used in the feature engineering part (default: None)
+                                0/1 encoding (default: None)
             - feateng_cols: list of column names that should be used for the feature engineering part
-                            (default None --> all except categorical_cols)
+                            (default None --> all, with categorical_cols in 0/1 encoding)
             - units: dictionary with {col_name: unit} where unit is a string that can be converted into a pint unit.
                      all columns without units are dimensionless and can be combined with any other column.
                      Note: it is assumed that all features are of comparable magnitude, i.e., not one variable is in
@@ -97,6 +97,7 @@ class AutoFeatModel(BaseEstimator):
         Attributes:
             - original_columns_: original columns of X when calling fit
             - all_columns_: columns of X after calling fit
+            - categorical_cols_map_: dict mapping from the original categorical columns to a list with new column names
             - feateng_cols_: actual columns used for the feature engineering
             - feature_formulas_: sympy formulas to generate new features
             - feature_functions_: compiled feature functions with columns
@@ -134,13 +135,16 @@ class AutoFeatModel(BaseEstimator):
         Returns:
             - df: dataframe with categorical features transformed into multiple 0/1 columns
         """
+        self.categorical_cols_map_ = {}
         if self.categorical_cols:
             e = OneHotEncoder(sparse=False, categories="auto")
             for c in self.categorical_cols:
                 if c not in df.columns:
                     raise ValueError("[AutoFeat] categorical_col %r not in df.columns" % c)
                 ohe = e.fit_transform(df[c].to_numpy()[:, None])
-                df = df.join(pd.DataFrame(ohe, columns=["%s_%r" % (str(c), i) for i in e.categories_[0]], index=df.index))
+                new_cat_cols = ["cat_%s_%r" % (str(c), i) for i in e.categories_[0]]
+                self.categorical_cols_map_[c] = new_cat_cols
+                df = df.join(pd.DataFrame(ohe, columns=new_cat_cols, index=df.index))
             # remove the categorical column from our columns to consider
             df.drop(columns=self.categorical_cols, inplace=True)
         return df
@@ -257,14 +261,17 @@ class AutoFeatModel(BaseEstimator):
         df = self._transform_categorical_cols(df)
         # if we're not given specific feateng_cols, then just take all columns except categorical
         if self.feateng_cols:
+            fcols = []
             for c in self.feateng_cols:
                 if c not in self.original_columns_:
                     raise ValueError("[AutoFeat] feateng_col %r not in df.columns" % c)
-            self.feateng_cols_ = self.feateng_cols
-        elif self.categorical_cols:
-            self.feateng_cols_ = [c for c in cols if c not in self.categorical_cols]
+                if c in self.categorical_cols_map_:
+                    fcols.extend(self.categorical_cols_map_[c])
+                else:
+                    fcols.append(c)
+            self.feateng_cols_ = fcols
         else:
-            self.feateng_cols_ = cols
+            self.feateng_cols_ = list(df.columns)
         # convert units to proper pint units
         if self.units:
             # need units for only and all feateng columns

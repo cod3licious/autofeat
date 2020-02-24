@@ -132,7 +132,7 @@ def engineer_features(
                 raise ValueError("[feateng] start feature %r not in df_org.columns" % c)
     feature_pool = {c: sympy.symbols(colnames2symbols(c, i), real=True) for i, c in enumerate(start_features)}
     if max_steps < 1:
-        if verbose:
+        if verbose > 0:
             print("[feateng] Warning: no features generated for max_steps < 1.")
         return df_org, feature_pool
     # get a copy of the dataframe - this is where all the features will be added
@@ -199,7 +199,8 @@ def engineer_features(
                 print("[feateng] %15i/%15i features transformed" % (i, len(features_list)), end="\r")
             for ft in transformations:
                 # check if transformation is valid for particular feature (i.e. given actual numerical values)
-                if func_transform_cond[ft](df[feat]):
+                # (don't compute transformations on categorical features)
+                if len(df[feat].unique()) > 2 and func_transform_cond[ft](df[feat]):
                     # get the expression (based on the primary features)
                     expr = func_transform[ft](feature_pool[feat])
                     expr_name = str(expr)
@@ -228,7 +229,7 @@ def engineer_features(
                                 # but we only filter them out at the end, since they still might help in other steps!
                                 if corr < 0.95:
                                     uncorr_features.add(expr_name)
-        if verbose:
+        if verbose > 0:
             print("[feateng] Generated %i transformed features from %i original features - done." % (len(new_features), len(features_list)))
         df = df.join(pd.DataFrame(feat_array[:, :len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
         return new_features, uncorr_features
@@ -279,14 +280,14 @@ def engineer_features(
                             # but we only filter them out at the end, since they still might help in other steps!
                             if corr < 0.95:
                                 uncorr_features.add(expr_name)
-        if verbose:
+        if verbose > 0:
             print("[feateng] Generated %i feature combinations from %i original feature tuples - done." % (len(new_features), len(feature_tuples)))
         df = df.join(pd.DataFrame(feat_array[:, :len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
         return new_features, uncorr_features
 
     # get transformations of initial features
     steps = 1
-    if verbose:
+    if verbose > 0:
         print("[feateng] Step 1: transformation of original features")
     original_features = list(feature_pool.keys())
     uncorr_features = set(feature_pool.keys())
@@ -296,14 +297,14 @@ def engineer_features(
     steps += 1
     # get combinations of first feature set
     if steps <= max_steps:
-        if verbose:
+        if verbose > 0:
             print("[feateng] Step 2: first combination of features")
         new_features, temp_uncorr = get_feature_combinations(list(combinations(original_features, 2)))
         uncorr_features.update(temp_uncorr)
         steps += 1
     while steps <= max_steps:
         # apply transformations on these new features
-        if verbose:
+        if verbose > 0:
             print("[feateng] Step %i: transformation of new features" % steps)
         temp_new, temp_uncorr = apply_transformations(new_features)
         new_features.extend(temp_new)
@@ -311,14 +312,14 @@ def engineer_features(
         steps += 1
         # get combinations of old and new features
         if steps <= max_steps:
-            if verbose:
+            if verbose > 0:
                 print("[feateng] Step %i: combining old and new features" % steps)
             new_new_features, temp_uncorr = get_feature_combinations(list(product(original_features, new_features)))
             uncorr_features.update(temp_uncorr)
             steps += 1
         # and combinations of new features within themselves
         if steps <= max_steps:
-            if verbose:
+            if verbose > 0:
                 print("[feateng] Step %i: combining new features" % steps)
             temp_new, temp_uncorr = get_feature_combinations(list(combinations(new_features, 2)))
             new_new_features.extend(temp_new)
@@ -329,7 +330,8 @@ def engineer_features(
             new_features = new_new_features
 
     # sort out all features that are just additions on the highest level or correlated with more basic features
-    if verbose:
+    if verbose > 0:
+        print("[feateng] Generated altogether %i new features in %i steps" % (len(feature_pool) - len(start_features), max_steps))
         print("[feateng] Removing correlated features, as well as additions at the highest level")
     feature_pool = {c: feature_pool[c] for c in feature_pool if c in uncorr_features and not feature_pool[c].func == sympy.add.Add}
     cols = [c for c in list(df.columns) if c in feature_pool and c not in df_org.columns]  # categorical cols not in feature_pool
@@ -338,6 +340,6 @@ def engineer_features(
         corrs = dict(zip(cols, np.max(np.abs(np.dot(StandardScaler().fit_transform(df[cols]).T, StandardScaler().fit_transform(df_org))/df_org.shape[0]), axis=1)))
         cols = [c for c in cols if corrs[c] < 0.9]
     cols = list(df_org.columns) + cols
-    if verbose:
+    if verbose > 0:
         print("[feateng] Generated a total of %i additional features" % (len(feature_pool) - len(start_features)))
     return df[cols], feature_pool

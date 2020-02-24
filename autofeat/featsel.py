@@ -232,12 +232,26 @@ def select_features(df, target, featsel_runs=5, keep=None, problem_type="regress
             selected_columns = flatten_lists(Parallel(n_jobs=n_jobs, verbose=100*verbose)(delayed(run_select_features)(i) for i in range(featsel_runs)))
 
         if selected_columns:
-            # take only features that were selected in multiple runs
             selected_columns = Counter(selected_columns)
-            thr = 0.2*featsel_runs if max(selected_columns.values()) > 1 else 0.
-            good_cols = [c for c in sorted(selected_columns, key=selected_columns.get, reverse=True) if selected_columns[c] > thr]
-    if verbose > 0:
-        print("[featsel] %i features after %i feature selection runs" % (len(good_cols), featsel_runs))
+            selected_columns = sorted(selected_columns, key=selected_columns.get, reverse=True)
+            if verbose > 0:
+                print("[featsel] %i features after %i feature selection runs" % (len(selected_columns), featsel_runs))
+            # correlation filtering
+            selected_columns = keep + [c for c in selected_columns if c not in keep]
+            if not keep:
+                good_cols = [selected_columns[0]]
+                k = 1
+            else:
+                good_cols = keep
+                k = len(keep)
+            if len(selected_columns) > k:
+                correlations = df_scaled[selected_columns].corr()
+                for i, c in enumerate(selected_columns[k:], k):
+                    # only take features that are somewhat uncorrelated with the rest
+                    if np.max(np.abs(correlations[c].ravel()[:i])) < 0.9:
+                        good_cols.append(c)
+            if verbose > 0:
+                print("[featsel] %i features after correlation filtering" % len(good_cols))
 
     # perform noise filtering on these features
     good_cols = _noise_filtering(df_scaled[good_cols].to_numpy(), target_scaled, good_cols, problem_type)

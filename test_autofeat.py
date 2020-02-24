@@ -29,8 +29,8 @@ def test_regular_X_y():
     X, target = get_random_data()
     afreg = AutoFeatRegressor(verbose=1, feateng_steps=3)
     df = afreg.fit_transform(X, target)
-    assert afreg.score(X, target) >= 0.9999, "R^2 should be 1."
-    assert afreg.score(df, target) >= 0.9999, "R^2 should be 1."
+    assert afreg.score(X, target) >= 0.999, "R^2 should be 1."
+    assert afreg.score(df, target) >= 0.999, "R^2 should be 1."
     assert list(df.columns)[:3] == ["x000", "x001", "x002"], "Wrong column names"
 
 
@@ -40,8 +40,8 @@ def test_regular_df_X_y():
     afreg = AutoFeatRegressor(verbose=1, feateng_steps=3)
     df = afreg.fit_transform(pd.DataFrame(X), pd.DataFrame(target))
     # score once with original, once with transformed data
-    assert afreg.score(pd.DataFrame(X), target) >= 0.9999, "R^2 should be 1."
-    assert afreg.score(df, target) >= 0.9999, "R^2 should be 1."
+    assert afreg.score(pd.DataFrame(X), target) >= 0.999, "R^2 should be 1."
+    assert afreg.score(df, target) >= 0.999, "R^2 should be 1."
     assert list(df.columns)[:3] == ["0", "1", "2"], "Wrong column names"
 
 
@@ -50,7 +50,7 @@ def test_weird_colnames():
     X, target = get_random_data()
     afreg = AutoFeatRegressor(verbose=1, feateng_steps=3)
     df = afreg.fit_transform(pd.DataFrame(X, columns=["x 1.1", 2, "x/3"]), pd.DataFrame(target))
-    assert afreg.score(pd.DataFrame(X, columns=["x 1.1", 2, "x/3"]), target) >= 0.9999, "R^2 should be 1."
+    assert afreg.score(pd.DataFrame(X, columns=["x 1.1", 2, "x/3"]), target) >= 0.999, "R^2 should be 1."
     assert list(df.columns)[:3] == ["x 1.1", "2", "x/3"], "Wrong column names"
     # error if the column names aren't the same as before
     try:
@@ -118,12 +118,12 @@ def test_categorical_cols():
         raise AssertionError("categorical_cols not in df should throw an error")
     afreg = AutoFeatRegressor(verbose=1, categorical_cols=["x4"], feateng_steps=3)
     df = afreg.fit_transform(pd.DataFrame(X, columns=["x1", "x2", "x3", "x4"]), target)
-    assert list(df.columns)[3:6] == ["x4_2.0", "x4_4.0", "x4_5.0"], "categorical_cols were not transformed correctly"
+    assert list(df.columns)[3:6] == ["cat_x4_2.0", "cat_x4_4.0", "cat_x4_5.0"], "categorical_cols were not transformed correctly"
     assert "x4" not in df.columns, "categorical_cols weren't deleted from df"
     df = afreg.transform(pd.DataFrame(X, columns=["x1", "x2", "x3", "x4"]))
-    assert list(df.columns)[3:6] == ["x4_2.0", "x4_4.0", "x4_5.0"], "categorical_cols were not transformed correctly"
+    assert list(df.columns)[3:6] == ["cat_x4_2.0", "cat_x4_4.0", "cat_x4_5.0"], "categorical_cols were not transformed correctly"
     assert "x4" not in df.columns, "categorical_cols weren't deleted from df"
-    assert afreg.score(pd.DataFrame(X, columns=["x1", "x2", "x3", "x4"]), target) >= 0.9999, "R^2 should be 1."
+    assert afreg.score(pd.DataFrame(X, columns=["x1", "x2", "x3", "x4"]), target) >= 0.999, "R^2 should be 1."
 
 
 def test_units():
@@ -136,7 +136,7 @@ def test_units():
     units = {"x2": "m/sec", "x3": "min/mm"}
     afreg = AutoFeatRegressor(verbose=1, units=units, feateng_steps=3)
     _ = afreg.fit_transform(pd.DataFrame(X, columns=["x1", "x2", "x3"]), target)
-    assert afreg.score(pd.DataFrame(X, columns=["x1", "x2", "x3"]), target) >= 0.9999, "R^2 should be 1."
+    assert afreg.score(pd.DataFrame(X, columns=["x1", "x2", "x3"]), target) >= 0.999, "R^2 should be 1."
 
 
 def test_classification():
