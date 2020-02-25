@@ -233,7 +233,8 @@ def select_features(df, target, featsel_runs=5, keep=None, problem_type="regress
 
         if selected_columns:
             selected_columns = Counter(selected_columns)
-            selected_columns = sorted(selected_columns, key=selected_columns.get, reverse=True)
+            # sort by frequency, but down weight longer formulas to break ties
+            selected_columns = sorted(selected_columns, key=lambda x: selected_columns[x] - 0.000001*len(str(x)), reverse=True)
             if verbose > 0:
                 print("[featsel] %i features after %i feature selection runs" % (len(selected_columns), featsel_runs))
             # correlation filtering

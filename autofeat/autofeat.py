@@ -330,7 +330,7 @@ class AutoFeatModel(BaseEstimator):
 
         # train final prediction model
         if self.problem_type == "regression":
-            model = lm.RidgeCV(alphas=np.logspace(-5, 5, 21), cv=5)
+            model = lm.LassoLarsCV(cv=5)
         elif self.problem_type == "classification":
             model = lm.LogisticRegressionCV(cv=5, class_weight="balanced")
         else:
