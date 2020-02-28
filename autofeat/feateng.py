@@ -245,15 +245,21 @@ def engineer_features(
         # get all feature combinations for the given feature tuples
         # modifies global variables df and feature_pool!
         nonlocal df, feature_pool, units
+        # only compute all combinations if there are more transformations applied afterwards
+        # additions at the highest level are sorted out later anyways
+        if steps == max_steps:
+            combinations = ["x*y"]
+        else:
+            combinations = list(func_combinations.keys())
         # returns a list of new features that were generated
         new_features = []
         uncorr_features = set()
         # store all new features in a preallocated numpy array before adding it to the dataframe
-        feat_array = np.zeros((df.shape[0], len(feature_tuples) * len(func_combinations)), dtype=np.float32)
+        feat_array = np.zeros((df.shape[0], len(feature_tuples) * len(combinations)), dtype=np.float32)
         for i, (feat1, feat2) in enumerate(feature_tuples):
             if verbose and not i % 100:
                 print("[feateng] %15i/%15i feature tuples combined" % (i, len(feature_tuples)), end="\r")
-            for fc in func_combinations:
+            for fc in combinations:
                 expr = func_combinations[fc](feature_pool[feat1], feature_pool[feat2])
                 expr_name = str(expr)
                 if expr_name not in feature_pool:

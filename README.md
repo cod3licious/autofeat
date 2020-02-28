@@ -1,5 +1,5 @@
 # `autofeat` library
-### A Linear Prediction Model with Automated Feature Engineering and Selection
+### Linear Prediction Models with Automated Feature Engineering and Selection
 
 This library contains the `AutoFeatRegressor` and `AutoFeatClassifier` models with a similar interface as `scikit-learn` models:
 - `fit()` function to fit the model parameters
