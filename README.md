@@ -31,17 +31,14 @@ The library requires Python 3! Other dependencies: `numpy`, `pandas`, `scikit-le
 ### Paper
 For further details on the model and implementation please refer to the [paper](https://arxiv.org/abs/1901.07329)  - and of course if any of this code was helpful for your research, please consider citing it:
 ```
-    @inproceedings{horn2019autofeat,
-      author    = {Horn, Franziska and Pack, Robert and Rieger, Michael},
-      title     = {The autofeat Python Library for Automatic Feature Engineering and Selection},
-      booktitle = {Machine Learning and Knowledge Discovery in Databases. ECML PKDD 2019},
-      editor    = {Cellier, Peggy and Driessens, Kurt},
-      year      = {2020},
-      publisher = {Springer International Publishing},
-      address   = {Cham},
-      pages     = {111--120},
-      isbn      = {978-3-030-43823-4},
-    }
+@inproceedings{horn2019autofeat,
+  title={The autofeat Python Library for Automated Feature Engineering and Selection},
+  author={Horn, Franziska and Pack, Robert and Rieger, Michael},
+  booktitle={Joint European Conference on Machine Learning and Knowledge Discovery in Databases},
+  pages={111--120},
+  year={2019},
+  organization={Springer}
+}
 ```
 
 If you don't like reading, you can also watch a video of my [talk at the PyData conference](https://www.youtube.com/watch?v=4-4pKPv9lJ4) about automated feature engineering and selection with `autofeat`.
