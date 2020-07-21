@@ -108,22 +108,23 @@ def test_categorical_cols():
     x3 = np.random.rand(1000)
     x4 = np.array(200*[4] + 300*[5] + 500*[2], dtype=int)
     target = 2 + 15*x1 + 3/(x2 - 1/x3) + 5*(x2 + np.log(x1))**3 + x4
-    X = np.vstack([x1, x2, x3, x4]).T
+    X = pd.DataFrame(np.vstack([x1, x2, x3, x4]).T, columns=["x1", "x2", "x3", "x4"])
+    X["x4"] = np.array(200*[4] + 300*["hello"] + 500*[2])  # categories can be weird strings
     afreg = AutoFeatRegressor(verbose=1, categorical_cols=["x4", "x5"], feateng_steps=3)
     try:
-        df = afreg.fit_transform(pd.DataFrame(X, columns=["x1", "x2", "x3", "x4"]), target)
+        df = afreg.fit_transform(X, target)
     except ValueError:
         pass
     else:
         raise AssertionError("categorical_cols not in df should throw an error")
     afreg = AutoFeatRegressor(verbose=1, categorical_cols=["x4"], feateng_steps=3)
-    df = afreg.fit_transform(pd.DataFrame(X, columns=["x1", "x2", "x3", "x4"]), target)
-    assert list(df.columns)[3:6] == ["cat_x4_2.0", "cat_x4_4.0", "cat_x4_5.0"], "categorical_cols were not transformed correctly"
+    df = afreg.fit_transform(X, target)
+    assert list(df.columns)[3:6] == ["cat_x4_'2'", "cat_x4_'4'", "cat_x4_'hello'"], "categorical_cols were not transformed correctly"
     assert "x4" not in df.columns, "categorical_cols weren't deleted from df"
-    df = afreg.transform(pd.DataFrame(X, columns=["x1", "x2", "x3", "x4"]))
-    assert list(df.columns)[3:6] == ["cat_x4_2.0", "cat_x4_4.0", "cat_x4_5.0"], "categorical_cols were not transformed correctly"
+    df = afreg.transform(X)
+    assert list(df.columns)[3:6] == ["cat_x4_'2'", "cat_x4_'4'", "cat_x4_'hello'"], "categorical_cols were not transformed correctly"
     assert "x4" not in df.columns, "categorical_cols weren't deleted from df"
-    assert afreg.score(pd.DataFrame(X, columns=["x1", "x2", "x3", "x4"]), target) >= 0.999, "R^2 should be 1."
+    assert afreg.score(X, target) >= 0.999, "R^2 should be 1."
 
 
 def test_units():

@@ -216,7 +216,7 @@ class AutoFeatModel(BaseEstimator):
                 # only generate features for completely not-nan rows
                 not_na_idx = df[cols].notna().all(axis=1)
                 try:
-                    feat_array[not_na_idx, i] = f(*(df[c].to_numpy()[not_na_idx] for c in cols))
+                    feat_array[not_na_idx, i] = f(*(df[c].to_numpy(dtype=float)[not_na_idx] for c in cols))
                     feat_array[~not_na_idx, i] = np.nan
                 except RuntimeWarning:
                     print("[AutoFeat] WARNING: Problem while evaluating expression: %r with columns %r" % (expr, cols),
@@ -248,7 +248,7 @@ class AutoFeatModel(BaseEstimator):
         # store column names as they'll be lost in the other check
         cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables
-        X, target = check_X_y(X, y, y_numeric=self.problem_type == "regression")
+        X, target = check_X_y(X, y, y_numeric=self.problem_type == "regression", dtype=None)
         if not cols:
             # the additional zeros in the name are because of the variable check in _generate_features,
             # where we check if the column name occurs in the the expression. this would lead to many
@@ -385,7 +385,7 @@ class AutoFeatModel(BaseEstimator):
         # store column names as they'll be lost in the other check
         cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables
-        X = check_array(X, force_all_finite="allow-nan")
+        X = check_array(X, force_all_finite="allow-nan", dtype=None)
         if not cols:
             cols = ["x%03i" % i for i in range(X.shape[1])]
         if not cols == self.original_columns_:
@@ -413,7 +413,7 @@ class AutoFeatModel(BaseEstimator):
         # store column names as they'll be lost in the other check
         cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables
-        X = check_array(X)
+        X = check_array(X, dtype=None)
         if not cols:
             cols = ["x%03i" % i for i in range(X.shape[1])]
         # transform X into a dataframe (again)
@@ -438,7 +438,7 @@ class AutoFeatModel(BaseEstimator):
         # store column names as they'll be lost in the other check
         cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
         # check input variables
-        X, target = check_X_y(X, y, y_numeric=self.problem_type == "regression")
+        X, target = check_X_y(X, y, y_numeric=self.problem_type == "regression", dtype=None)
         if not cols:
             cols = ["x%03i" % i for i in range(X.shape[1])]
         # transform X into a dataframe (again)
