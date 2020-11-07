@@ -174,7 +174,7 @@ def engineer_features(
         func_transform_cond = {
             "exp": lambda x: np.all(x < 10),
             "exp-": lambda x: np.all(-x < 10),
-            "log": lambda x: np.all(x > 0),
+            "log": lambda x: np.all(x >= 0),
             "abs": lambda x: np.any(x < 0),
             "sqrt": lambda x: np.all(x >= 0),
             "sin": lambda x: True,
@@ -216,7 +216,10 @@ def engineer_features(
                         feature_pool[expr_name] = expr
                         # create temporary variable expression and apply it to precomputed feature
                         t = sympy.symbols("t")
-                        expr_temp = func_transform[ft](t)
+                        if expr == "log" and np.any(df[feat] < 1):
+                            expr_temp = func_transform[ft](t + 1)
+                        else:
+                            expr_temp = func_transform[ft](t)
                         f = lambdify(t, expr_temp)
                         new_feat = np.array(f(df[feat].to_numpy()), dtype=np.float32)
                         # near 0 variance test - sometimes all that's left is "e"

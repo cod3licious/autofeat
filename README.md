@@ -11,6 +11,8 @@ When calling the `fit()` function, internally the `fit_transform()` function wil
 
 In addition, only the feature selection part is also available in the `FeatureSelector` model.
 
+Furthermore (as of version 2.0.0), minimal feature selection (removing zero variance and redundant features), engineering (simple product and ratio of features), and scaling (power transform to make features more normally distributed) is also available in the `AutoFeatLight` model.
+
 The `AutoFeatRegressor`, `AutoFeatClassifier`, and `FeatureSelector` models need to be **fit on data without NaNs**, as they internally call the sklearn `LassoLarsCV` model, which can not handle NaNs. When calling `transform()`, NaNs (but not `np.inf`) are okay.
 
 The [autofeat examples notebook](https://github.com/cod3licious/autofeat/blob/master/autofeat_examples.ipynb) contains a simple usage example - try it out! :) Additional examples can be found in the autofeat benchmark notebooks for [regression](https://github.com/cod3licious/autofeat/blob/master/autofeat_benchmark_regression.ipynb) (which also contains the code to reproduce the results from the paper mentioned below) and [classification](https://github.com/cod3licious/autofeat/blob/master/autofeat_benchmark_classification.ipynb), as well as the testing scripts.
