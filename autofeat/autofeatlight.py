@@ -11,12 +11,14 @@ from sklearn.utils.validation import check_array, check_is_fitted
 from sklearn.preprocessing import StandardScaler, PowerTransformer
 
 
-def _check_features(df, verbose=0):
+def _check_features(df, self.corrthr, corrthr=0.995, verbose=0):
     """
     Identify features with zeros variance or a correlation of (almost) 1 to other features, i.e., useless features.
 
     Inputs:
         - df: pd.DataFrame with all features
+        - corrthr: threshold for correlations: if a feature has a higher pearson correlation to another feature it's
+                   considered as redundant and ignored (float; default: 0.995)
         - verbose: verbosity level (int; default: 0)
     Returns:
         - list of column names representing 'ok' features (numeric, non-zero variance, not redundant)
@@ -33,7 +35,7 @@ def _check_features(df, verbose=0):
     corrmat = df.corr().abs()
     np.fill_diagonal(corrmat.values, 0)
     for c, v in corrmat.unstack().sort_values(ascending=False).items():
-        if v < 0.995:
+        if v < corrthr:
             break
         if (c[0] != c[1]) and (c[0] not in useless_cols):
             correlated_cols[c[0]].add(c[1])
@@ -114,6 +116,8 @@ class AutoFeatLight(BaseEstimator):
         compute_product=True,
         scale=True,
         power_transform=True,
+        corrthr_init=0.99999,
+        corrthr=0.995,
         verbose=0,
     ):
         """
@@ -127,6 +131,9 @@ class AutoFeatLight(BaseEstimator):
             - compute_product: bool (default: True), whether to compute products of features
             - scale: bool (default: True), rudimentary scaling of the data (only relevant if not computing the power_transform anyways)
             - power_transform: bool (default: True), whether to use a power transform (yeo-johnson) to make all features more normally distributed
+            - corrthr_init: threshold for initial features (see below; float; default: 0.99999)
+            - corrthr: threshold for correlations: if a feature has a higher pearson correlation to another feature it's
+                       considered as redundant and ignored (float; default: 0.995)
             - verbose: verbosity level (int; default: 0)
 
         Attributes (after calling fit/fit_transform):
@@ -142,6 +149,8 @@ class AutoFeatLight(BaseEstimator):
         self.compute_product = compute_product
         self.scale = scale
         self.power_transform = power_transform
+        self.corrthr_init = corrthr_init
+        self.corrthr = corrthr
         self.verbose = verbose
 
     def fit(self, X):
@@ -217,7 +226,7 @@ class AutoFeatLight(BaseEstimator):
         # transform X into a dataframe (again)
         df = pd.DataFrame(X, columns=self.original_columns_, index=df_index)
         # see which of the original features are not completely useless
-        self.good_cols_org_ = _check_features(df, self.verbose)
+        self.good_cols_org_ = _check_features(df, self.corrthr_init, self.verbose)
         if not self.good_cols_org_:
             if self.verbose > 0:
                 print("[AutoFeatLight] WARNING: No good features found; returning original features.")
@@ -229,7 +238,7 @@ class AutoFeatLight(BaseEstimator):
             # add new features to original dataframe
             df = pd.concat([df, pd.DataFrame(X_new, columns=new_features, index=df_index)], axis=1)
             # check again which of the features we should keep
-            self.features_ = _check_features(df, self.verbose)
+            self.features_ = _check_features(df, self.corrthr, self.verbose)
             df = df[self.features_]
         else:
             self.features_ = self.good_cols_org_
