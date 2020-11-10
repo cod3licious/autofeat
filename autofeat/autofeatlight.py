@@ -11,7 +11,7 @@ from sklearn.utils.validation import check_array, check_is_fitted
 from sklearn.preprocessing import StandardScaler, PowerTransformer
 
 
-def _check_features(df, self.corrthr, corrthr=0.995, verbose=0):
+def _check_features(df, corrthr=0.995, verbose=0):
     """
     Identify features with zeros variance or a correlation of (almost) 1 to other features, i.e., useless features.
 
