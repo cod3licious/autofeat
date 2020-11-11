@@ -39,17 +39,16 @@ def _check_features(df, corrthr=0.995, verbose=0):
             break
         if (c[0] != c[1]) and (c[0] not in useless_cols):
             correlated_cols[c[0]].add(c[1])
-    if correlated_cols:
-        for c in df.columns:
-            # the first variable that is correlated with others adds its correlated variables to the set of useless cols
-            # since we check if a variable is in useless_cols, the correlated variables can't add the original variable
-            if (c not in useless_cols) and (c in correlated_cols):
-                useless_cols.update(correlated_cols[c])
+    # keep the columns that eliminate the most correlated columns
+    for c in sorted(correlated_cols, key=lambda x: len(correlated_cols[x]), reverse=True):
+        # the first variable that is correlated with others adds its correlated variables to the set of useless cols
+        # since we check if a variable is in useless_cols, the correlated variables can't add the original variable
+        if c not in useless_cols:
+            useless_cols.update(correlated_cols[c])
     # return list of columns that should be kept
     if verbose:
         print("[AutoFeatLight] %i columns identified as useless:" % len(useless_cols))
-        if useless_cols:
-            print(sorted(useless_cols))
+        print(sorted(useless_cols))
     return [c for c in df.columns if c not in useless_cols]
 
 
@@ -114,10 +113,10 @@ class AutoFeatLight(BaseEstimator):
         self,
         compute_ratio=True,
         compute_product=True,
-        scale=True,
-        power_transform=True,
-        corrthr_init=0.99999,
+        scale=False,
+        power_transform=False,
         corrthr=0.995,
+        corrthr_init=0.99999,
         verbose=0,
     ):
         """
@@ -129,11 +128,11 @@ class AutoFeatLight(BaseEstimator):
         Inputs:
             - compute_ratio: bool (default: True), whether to compute ratios of features
             - compute_product: bool (default: True), whether to compute products of features
-            - scale: bool (default: True), rudimentary scaling of the data (only relevant if not computing the power_transform anyways)
-            - power_transform: bool (default: True), whether to use a power transform (yeo-johnson) to make all features more normally distributed
-            - corrthr_init: threshold for initial features (see below; float; default: 0.99999)
+            - scale: bool (default: False), rudimentary abs-max scaling of the data (only relevant if not computing the power_transform anyways)
+            - power_transform: bool (default: False), whether to use a power transform (yeo-johnson) to make all features more normally distributed
             - corrthr: threshold for correlations: if a feature has a higher pearson correlation to another feature it's
                        considered as redundant and ignored (float; default: 0.995)
+            - corrthr_init: correlation threshold for initial features (before the feat eng step) (float; default: 0.99999)
             - verbose: verbosity level (int; default: 0)
 
         Attributes (after calling fit/fit_transform):
