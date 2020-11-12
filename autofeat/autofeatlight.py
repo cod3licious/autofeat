@@ -128,7 +128,7 @@ class AutoFeatLight(BaseEstimator):
         Inputs:
             - compute_ratio: bool (default: True), whether to compute ratios of features
             - compute_product: bool (default: True), whether to compute products of features
-            - scale: bool (default: False), rudimentary abs-max scaling of the data (only relevant if not computing the power_transform anyways)
+            - scale: bool (default: False), rudimentary scaling of the data (only relevant if not computing the power_transform anyways)
             - power_transform: bool (default: False), whether to use a power transform (yeo-johnson) to make all features more normally distributed
             - corrthr: threshold for correlations: if a feature has a higher pearson correlation to another feature it's
                        considered as redundant and ignored (float; default: 0.995)
@@ -249,5 +249,7 @@ class AutoFeatLight(BaseEstimator):
                 self.power_transformer_ = PowerTransformer(method='yeo-johnson', standardize=True)
                 X_new = self.power_transformer_.fit_transform(X_new)
             df = pd.DataFrame(X_new, columns=df.columns, index=df.index)
+        if self.verbose > 0:
+            print("[AutoFeatLight] New data shape: %i x %i" % df.shape)
         # return either dataframe or array
         return df if self.return_df_ else df.to_numpy()
