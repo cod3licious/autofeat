@@ -342,7 +342,7 @@ def engineer_features(
     if verbose > 0:
         print("[feateng] Generated altogether %i new features in %i steps" % (len(feature_pool) - len(start_features), max_steps))
         print("[feateng] Removing correlated features, as well as additions at the highest level")
-    feature_pool = {c: feature_pool[c] for c in feature_pool if c in uncorr_features and not feature_pool[c].func == sympy.add.Add}
+    feature_pool = {c: feature_pool[c] for c in feature_pool if c in uncorr_features and not feature_pool[c].func == sympy.core.add.Add}
     cols = [c for c in list(df.columns) if c in feature_pool and c not in df_org.columns]  # categorical cols not in feature_pool
     if cols:
         # check for correlated features again; this time with the start features
