@@ -194,13 +194,20 @@ def engineer_features(
         uncorr_features = set()
         # store all new features in a preallocated numpy array before adding it to the dataframe
         feat_array = np.zeros((df.shape[0], len(features_list) * len(transformations)), dtype=np.float32)
+        cat_features = {feat for feat in features_list if len(df[feat].unique()) <= 2}
+        func_transform_cond_cache = {}   # Cache for func_transform_cond checks
         for i, feat in enumerate(features_list):
             if verbose and not i % 100:
                 print("[feateng] %15i/%15i features transformed" % (i, len(features_list)), end="\r")
             for ft in transformations:
-                # check if transformation is valid for particular feature (i.e. given actual numerical values)
                 # (don't compute transformations on categorical features)
-                if len(df[feat].unique()) > 2 and func_transform_cond[ft](df[feat]):
+                if feat in cat_features:
+                    continue
+                # check if transformation is valid for particular feature (i.e. given actual numerical values)
+                cache_key = (ft, feat)
+                if cache_key not in func_transform_cond_cache:
+                    func_transform_cond_cache[cache_key] = func_transform_cond[ft](df[feat])
+                if func_transform_cond_cache[cache_key]:
                     # get the expression (based on the primary features)
                     expr = func_transform[ft](feature_pool[feat])
                     expr_name = str(expr)
