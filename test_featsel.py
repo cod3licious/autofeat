@@ -82,7 +82,7 @@ if __name__ == '__main__':
             successful_tests.add(check.func.__name__)
             check(estimator)
     # additionally check the class, but don't run all the other tests
-    for estimator, check in check_estimator(FeatureSelector, generate_only=True):
+    for estimator, check in check_estimator(FeatureSelector(), generate_only=True):
         if check.func.__name__ not in successful_tests:
             print(check.func.__name__)
             successful_tests.add(check.func.__name__)
