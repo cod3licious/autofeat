@@ -8,6 +8,8 @@ import re
 import operator as op
 from functools import reduce
 from itertools import combinations, product
+
+import numba as nb
 import numpy as np
 import pandas as pd
 import sympy
@@ -138,6 +140,25 @@ def engineer_features(
     # get a copy of the dataframe - this is where all the features will be added
     df = pd.DataFrame(df_org.copy(), dtype=np.float32)
 
+    compiled_func_transformations = None
+    compiled_func_transforms_cond = None
+    compiled_func_combinations = None
+
+    def compile_func_transform(name, ft, plus_1=False):
+        def _abs(x):
+            return np.abs(x)
+        # create temporary variable expression and apply it to precomputed feature
+        t = sympy.symbols("t")
+        if plus_1:
+            expr_temp = ft(t + 1)
+        else:
+            expr_temp = ft(t)
+        if name == "abs":
+            fn = _abs
+        else:
+            fn = lambdify(t, expr_temp)
+        return nb.njit(fn)
+
     def apply_transformations(features_list):
         # feature transformations
         func_transform = {
@@ -189,13 +210,23 @@ def engineer_features(
         # apply transformations to the features in the given features list
         # modifies global variables df and feature_pool!
         nonlocal df, feature_pool, units
+        nonlocal compiled_func_transformations, compiled_func_transforms_cond
+
+        if compiled_func_transformations is None:
+            compiled_func_transformations = {k: compile_func_transform(k, v)
+                                             for k, v in func_transform.items()}
+            compiled_func_transformations["log_plus_1"] = compile_func_transform(
+                "log", func_transform["log"], plus_1=True)
+
+            compiled_func_transforms_cond = {x[0]: nb.njit(x[1]) for x in func_transform_cond.items()}
+
         # returns a list of new features that were generated
         new_features = []
         uncorr_features = set()
         # store all new features in a preallocated numpy array before adding it to the dataframe
         feat_array = np.zeros((df.shape[0], len(features_list) * len(transformations)), dtype=np.float32)
         cat_features = {feat for feat in features_list if len(df[feat].unique()) <= 2}
-        func_transform_cond_cache = {}   # Cache for func_transform_cond checks
+        func_transform_cond_cache = {}   # Cache for compiled_func_transforms_cond checks
         for i, feat in enumerate(features_list):
             if verbose and not i % 100:
                 print("[feateng] %15i/%15i features transformed" % (i, len(features_list)), end="\r")
@@ -206,7 +237,7 @@ def engineer_features(
                 # check if transformation is valid for particular feature (i.e. given actual numerical values)
                 cache_key = (ft, feat)
                 if cache_key not in func_transform_cond_cache:
-                    func_transform_cond_cache[cache_key] = func_transform_cond[ft](df[feat])
+                    func_transform_cond_cache[cache_key] = compiled_func_transforms_cond[ft](df[feat].to_numpy())
                 if func_transform_cond_cache[cache_key]:
                     # get the expression (based on the primary features)
                     expr = func_transform[ft](feature_pool[feat])
@@ -221,13 +252,10 @@ def engineer_features(
                             except (pint.DimensionalityError, pint.OffsetUnitCalculusError):
                                 continue
                         feature_pool[expr_name] = expr
-                        # create temporary variable expression and apply it to precomputed feature
-                        t = sympy.symbols("t")
                         if expr == "log" and np.any(df[feat] < 1):
-                            expr_temp = func_transform[ft](t + 1)
+                            f = compiled_func_transformations["log_plus_1"]
                         else:
-                            expr_temp = func_transform[ft](t)
-                        f = lambdify(t, expr_temp)
+                            f = compiled_func_transformations[ft]
                         new_feat = np.array(f(df[feat].to_numpy()), dtype=np.float32)
                         # near 0 variance test - sometimes all that's left is "e"
                         if np.isfinite(new_feat).all() and np.var(new_feat) > 1e-10:
@@ -244,6 +272,16 @@ def engineer_features(
         df = df.join(pd.DataFrame(feat_array[:, :len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
         return new_features, uncorr_features
 
+    def compile_func_combinations(func_combinations):
+        d = {}
+        for fc in func_combinations:
+            s, t = sympy.symbols("s t")
+            expr_temp = func_combinations[fc](s, t)
+            fn = lambdify((s, t), expr_temp)
+            vect = nb.vectorize(["float32(float32, float32)"], nopython=True)
+            d[fc] = vect(fn)
+        return d
+
     def get_feature_combinations(feature_tuples):
         # new features as combinations of two other features
         func_combinations = {
@@ -254,7 +292,11 @@ def engineer_features(
         }
         # get all feature combinations for the given feature tuples
         # modifies global variables df and feature_pool!
-        nonlocal df, feature_pool, units
+        nonlocal df, feature_pool, units, compiled_func_combinations
+
+        if compiled_func_combinations is None:
+            compiled_func_combinations = compile_func_combinations(func_combinations)
+
         # only compute all combinations if there are more transformations applied afterwards
         # additions at the highest level are sorted out later anyways
         if steps == max_steps:
@@ -281,10 +323,7 @@ def engineer_features(
                         except (pint.DimensionalityError, pint.OffsetUnitCalculusError):
                             continue
                     feature_pool[expr_name] = expr
-                    # create temporary variable expression to apply it to precomputed features
-                    s, t = sympy.symbols("s t")
-                    expr_temp = func_combinations[fc](s, t)
-                    f = lambdify((s, t), expr_temp)
+                    f = compiled_func_combinations[fc]
                     new_feat = np.array(f(df[feat1].to_numpy(), df[feat2].to_numpy()), dtype=np.float32)
                     # near 0 variance test - sometimes all that's left is "e"
                     if np.isfinite(new_feat).all() and np.var(new_feat) > 1e-10:
