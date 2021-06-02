@@ -27,7 +27,7 @@ You can either download the code from here and include the autofeat folder in yo
 
     $ pip install autofeat
 
-The library requires Python 3! Other dependencies: `numpy`, `pandas`, `scikit-learn`, `sympy`, `joblib`, and `pint`
+The library requires Python 3! Other dependencies: `numpy`, `pandas`, `scikit-learn`, `sympy`, `joblib`, `pint` and `numba`.
 
 
 ### Paper
