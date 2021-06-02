@@ -451,6 +451,10 @@ class AutoFeatModel(BaseEstimator):
             self.always_return_numpy = temp
         return self.prediction_model_.score(df[self.good_cols_].to_numpy(), target)
 
+    @property
+    def n_features_in_(self):
+        return len(self.feateng_cols_)
+
 
 class AutoFeatRegressor(AutoFeatModel, BaseEstimator, RegressorMixin):
     """Short-cut initialization for AutoFeatModel with problem_type: regression"""
