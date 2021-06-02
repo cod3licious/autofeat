@@ -9,10 +9,10 @@ import numpy as np
 import pandas as pd
 from collections import Counter
 from joblib import Parallel, delayed
-from sklearn.preprocessing import StandardScaler
 from sklearn.base import BaseEstimator
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 import sklearn.linear_model as lm
+from .nb_utils import nb_standard_scale
 
 
 def _add_noise_features(X):
@@ -27,7 +27,7 @@ def _add_noise_features(X):
     n_feat = X.shape[1]
     if X.shape[0] > 50 and n_feat > 1:
         # shuffled features
-        rand_noise = StandardScaler().fit_transform(np.random.permutation(X.flatten()).reshape(X.shape))
+        rand_noise = nb_standard_scale(np.random.permutation(X.flatten()).reshape(X.shape))
         X = np.hstack([X, rand_noise])
     # normally distributed noise
     rand_noise = np.random.randn(X.shape[0], max(3, int(0.5*n_feat)))
@@ -96,6 +96,8 @@ def _select_features_1run(df, target, problem_type="regression", verbose=0):
     Returns:
         - good_cols: list of column names for df with which a prediction model can be trained
     """
+    if df.shape[0] <= 1:
+        raise ValueError("n_samples = {}".format(df.shape[0]))
     # initial selection of too few but (hopefully) relevant features
     if problem_type == "regression":
         model = lm.LassoLarsCV(cv=5, eps=1e-8)
@@ -197,12 +199,11 @@ def select_features(df, target, featsel_runs=5, keep=None, problem_type="regress
         if featsel_runs > df.shape[0]:
             print("[featsel] WARNING: Less data points than featsel runs!!")
         print("[featsel] Scaling data...", end="")
-    scaler = StandardScaler()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        df_scaled = pd.DataFrame(scaler.fit_transform(df), columns=df.columns, dtype=np.float32)
+        df_scaled = pd.DataFrame(nb_standard_scale(df.to_numpy()), columns=df.columns, dtype=np.float32)
         if problem_type == "regression":
-            target_scaled = scaler.fit_transform(target.reshape(-1, 1)).ravel()
+            target_scaled = nb_standard_scale(target.reshape(-1, 1)).ravel()
         else:
             target_scaled = target
     if verbose > 0:
@@ -322,6 +323,7 @@ class FeatureSelector(BaseEstimator):
         df = pd.DataFrame(X, columns=cols)
         # do the feature selection
         self.good_cols_ = select_features(df, target, self.featsel_runs, self.keep, self.problem_type, self.n_jobs, self.verbose)
+        self.n_features_in_ = X.shape[1]
         return self
 
     def transform(self, X):

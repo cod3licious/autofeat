@@ -251,5 +251,6 @@ class AutoFeatLight(BaseEstimator):
             df = pd.DataFrame(X_new, columns=df.columns, index=df.index)
         if self.verbose > 0:
             print("[AutoFeatLight] New data shape: %i x %i" % df.shape)
+        self.n_features_in_ = len(self.original_columns_)
         # return either dataframe or array
         return df if self.return_df_ else df.to_numpy()
