@@ -5,6 +5,7 @@
 from __future__ import unicode_literals, division, print_function, absolute_import
 from builtins import range
 import warnings
+import numba as nb
 import numpy as np
 import pandas as pd
 import sklearn.linear_model as lm
@@ -203,20 +204,30 @@ class AutoFeatModel(BaseEstimator):
                 if not cols:
                     # this can happen if no features were selected and the expr is "E" (i.e. the constant e)
                     f = None
+                    f_jit = None
                 else:
                     try:
                         f = lambdify([self.feature_formulas_[c] for c in cols], self.feature_formulas_[expr])
+                        f_jit = nb.njit(f)
                     except Exception:
                         print("[AutoFeat] Error while processing expression: %r" % expr)
                         raise
-                self.feature_functions_[expr] = (cols, f)
+                self.feature_functions_[expr] = (cols, f, f_jit)
             else:
-                cols, f = self.feature_functions_[expr]
+                cols, f, f_jit = self.feature_functions_[expr]
             if f is not None:
                 # only generate features for completely not-nan rows
                 not_na_idx = df[cols].notna().all(axis=1)
                 try:
-                    feat_array[not_na_idx, i] = f(*(df[c].to_numpy(dtype=float)[not_na_idx] for c in cols))
+                    try:
+                        feat = f_jit(*(df[c].to_numpy(dtype=float)[not_na_idx] for c in cols))
+                    except nb.TypingError:
+                        # lambified abs fn with non trivial inputs doesn't jit compile with numba, yet
+                        # fallback on the non jitted version of the function
+                        feat = f(*(df[c].to_numpy(dtype=float)[not_na_idx] for c in cols))
+                        # henceforth, always use the non jitted version of the function
+                        self.feature_functions_[expr] = (cols, f, f)
+                    feat_array[not_na_idx, i] = feat
                     feat_array[~not_na_idx, i] = np.nan
                 except RuntimeWarning:
                     print("[AutoFeat] WARNING: Problem while evaluating expression: %r with columns %r" % (expr, cols),
