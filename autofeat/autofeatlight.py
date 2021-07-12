@@ -32,7 +32,7 @@ def _check_features(df, corrthr=0.995, verbose=0):
             useless_cols.add(c)
     # 2. identify redundant features (that have a correlation of ~1 with other features)
     correlated_cols = defaultdict(set)
-    corrmat = df.corr().abs()
+    corrmat = pd.DataFrame(np.abs(np.corrcoef(df.values, rowvar=False)), columns=df.columns)
     np.fill_diagonal(corrmat.values, 0)
     for c, v in corrmat.unstack().sort_values(ascending=False).items():
         if v < corrthr:
