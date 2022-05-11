@@ -290,6 +290,7 @@ def engineer_features(
             "x-y": lambda x, y: x - y,
             "y-x": lambda x, y: y - x
         }
+        commutative_func_combinations = {'x+y', 'x*y'}
         # get all feature combinations for the given feature tuples
         # modifies global variables df and feature_pool!
         nonlocal df, feature_pool, units, compiled_func_combinations
@@ -312,6 +313,10 @@ def engineer_features(
             if verbose and not i % 100:
                 print("[feateng] %15i/%15i feature tuples combined" % (i, len(feature_tuples)), end="\r")
             for fc in combinations:
+                if fc in commutative_func_combinations:
+                    flipped_expr_name = str(func_combinations[fc](feature_pool[feat2], feature_pool[feat1]))
+                    if flipped_expr_name in feature_pool:
+                        continue
                 expr = func_combinations[fc](feature_pool[feat1], feature_pool[feat2])
                 expr_name = str(expr)
                 if expr_name not in feature_pool:
