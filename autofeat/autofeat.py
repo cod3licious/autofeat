@@ -437,6 +437,30 @@ class AutoFeatModel(BaseEstimator):
             self.always_return_numpy = temp
         return self.prediction_model_.predict(df[self.good_cols_].to_numpy())
 
+    def predict_proba(self, X):
+        """
+        Inputs:
+            - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
+        Returns:
+            - y_pred: predicted targets probabilities return by prediction_model.predict_proba()
+        """
+        check_is_fitted(self, ["prediction_model_"])
+        # store column names as they'll be lost in the other check
+        cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
+        # check input variables
+        X = check_array(X, dtype=None)
+        if not cols:
+            cols = ["x%03i" % i for i in range(X.shape[1])]
+        # transform X into a dataframe (again)
+        df = pd.DataFrame(X, columns=cols)
+        # do we need to call transform?
+        if not list(df.columns) == self.all_columns_:
+            temp = self.always_return_numpy
+            self.always_return_numpy = False
+            df = self.transform(df)
+            self.always_return_numpy = temp
+        return self.prediction_model_.predict_proba(df[self.good_cols_].to_numpy())
+
     def score(self, X, y):
         """
         Inputs:
