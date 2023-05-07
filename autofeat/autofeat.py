@@ -238,6 +238,30 @@ class AutoFeatModel(BaseEstimator):
         df = df.join(pd.DataFrame(feat_array, columns=new_feat_cols, index=df.index))
         return df
 
+    def _X2df(self, X):
+        """
+        Helper function that ensures correctness of the input data for classification tasks.
+        Inputs:
+            - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
+        Returns:
+            - df: transformed dataframe
+        """
+        # store column names as they'll be lost in the other check
+        cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
+        # check input variables
+        X = check_array(X, dtype=None)
+        if not cols:
+            cols = ["x%03i" % i for i in range(X.shape[1])]
+        # transform X into a dataframe (again)
+        df = pd.DataFrame(X, columns=cols)
+        # do we need to call transform?
+        if not list(df.columns) == self.all_columns_:
+            temp = self.always_return_numpy
+            self.always_return_numpy = False
+            df = self.transform(df)
+            self.always_return_numpy = temp
+        return df
+
     def fit_transform(self, X, y):
         """
         Fits the regression model and returns a new dataframe with the additional features.
@@ -421,20 +445,7 @@ class AutoFeatModel(BaseEstimator):
             - y_pred: predicted targets return by prediction_model.predict()
         """
         check_is_fitted(self, ["prediction_model_"])
-        # store column names as they'll be lost in the other check
-        cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
-        # check input variables
-        X = check_array(X, dtype=None)
-        if not cols:
-            cols = ["x%03i" % i for i in range(X.shape[1])]
-        # transform X into a dataframe (again)
-        df = pd.DataFrame(X, columns=cols)
-        # do we need to call transform?
-        if not list(df.columns) == self.all_columns_:
-            temp = self.always_return_numpy
-            self.always_return_numpy = False
-            df = self.transform(df)
-            self.always_return_numpy = temp
+        df = self._X2df(X)
         return self.prediction_model_.predict(df[self.good_cols_].to_numpy())
 
     def predict_proba(self, X):
@@ -445,20 +456,7 @@ class AutoFeatModel(BaseEstimator):
             - y_pred: predicted targets probabilities return by prediction_model.predict_proba()
         """
         check_is_fitted(self, ["prediction_model_"])
-        # store column names as they'll be lost in the other check
-        cols = [str(c) for c in X.columns] if isinstance(X, pd.DataFrame) else []
-        # check input variables
-        X = check_array(X, dtype=None)
-        if not cols:
-            cols = ["x%03i" % i for i in range(X.shape[1])]
-        # transform X into a dataframe (again)
-        df = pd.DataFrame(X, columns=cols)
-        # do we need to call transform?
-        if not list(df.columns) == self.all_columns_:
-            temp = self.always_return_numpy
-            self.always_return_numpy = False
-            df = self.transform(df)
-            self.always_return_numpy = temp
+        df = self._X2df(X)
         return self.prediction_model_.predict_proba(df[self.good_cols_].to_numpy())
 
     def score(self, X, y):
