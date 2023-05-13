@@ -6,6 +6,7 @@
 *.csv
 *.db
 .ipynb_checkpoints/
+__pycache__/
 examples/data/
 dist/
 build/
