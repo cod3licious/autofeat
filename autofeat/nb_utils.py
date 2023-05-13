@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Author: Jeethu Rao <jboloor@acm.org>
 # License: MIT
 
@@ -6,7 +5,7 @@ import numba as nb
 import numpy as np
 
 
-@nb.njit(inline='always')
+@nb.njit(inline="always")
 def nb_apply_along_axis(func1d, axis, arr):
     assert arr.ndim == 2
     assert axis in [0, 1]

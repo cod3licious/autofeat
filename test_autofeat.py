@@ -10,7 +10,7 @@ def get_random_data(seed=15):
     x1 = np.random.rand(1000)
     x2 = np.random.randn(1000)
     x3 = np.random.rand(1000)
-    target = 2 + 15*x1 + 3/(x2 - 1/x3) + 5*(x2 + np.log(x1))**3
+    target = 2 + 15 * x1 + 3 / (x2 - 1 / x3) + 5 * (x2 + np.log(x1)) ** 3
     X = np.vstack([x1, x2, x3]).T
     return X, target
 
@@ -106,10 +106,10 @@ def test_categorical_cols():
     x1 = np.random.rand(1000)
     x2 = np.random.randn(1000)
     x3 = np.random.rand(1000)
-    x4 = np.array(200*[4] + 300*[5] + 500*[2], dtype=int)
-    target = 2 + 15*x1 + 3/(x2 - 1/x3) + 5*(x2 + np.log(x1))**3 + x4
+    x4 = np.array(200 * [4] + 300 * [5] + 500 * [2], dtype=int)
+    target = 2 + 15 * x1 + 3 / (x2 - 1 / x3) + 5 * (x2 + np.log(x1)) ** 3 + x4
     X = pd.DataFrame(np.vstack([x1, x2, x3, x4]).T, columns=["x1", "x2", "x3", "x4"])
-    X["x4"] = np.array(200*[4] + 300*["hello"] + 500*[2])  # categories can be weird strings
+    X["x4"] = np.array(200 * [4] + 300 * ["hello"] + 500 * [2])  # categories can be weird strings
     afreg = AutoFeatRegressor(verbose=1, categorical_cols=["x4", "x5"], feateng_steps=3)
     try:
         df = afreg.fit_transform(X, target)
@@ -119,10 +119,18 @@ def test_categorical_cols():
         raise AssertionError("categorical_cols not in df should throw an error")
     afreg = AutoFeatRegressor(verbose=1, categorical_cols=["x4"], feateng_steps=3)
     df = afreg.fit_transform(X, target)
-    assert list(df.columns)[3:6] == ["cat_x4_'2'", "cat_x4_'4'", "cat_x4_'hello'"], "categorical_cols were not transformed correctly"
+    assert list(df.columns)[3:6] == [
+        "cat_x4_'2'",
+        "cat_x4_'4'",
+        "cat_x4_'hello'",
+    ], "categorical_cols were not transformed correctly"
     assert "x4" not in df.columns, "categorical_cols weren't deleted from df"
     df = afreg.transform(X)
-    assert list(df.columns)[3:6] == ["cat_x4_'2'", "cat_x4_'4'", "cat_x4_'hello'"], "categorical_cols were not transformed correctly"
+    assert list(df.columns)[3:6] == [
+        "cat_x4_'2'",
+        "cat_x4_'4'",
+        "cat_x4_'hello'",
+    ], "categorical_cols were not transformed correctly"
     assert "x4" not in df.columns, "categorical_cols weren't deleted from df"
     assert afreg.score(X, target) >= 0.999, "R^2 should be 1."
 
@@ -132,7 +140,7 @@ def test_units():
     x1 = np.random.rand(1000)
     x2 = np.random.randn(1000)
     x3 = np.random.rand(1000)
-    target = 2 + 15*x1 + 3/(x2 - 1/x3) + 5*(x2 * np.log(x1))**3
+    target = 2 + 15 * x1 + 3 / (x2 - 1 / x3) + 5 * (x2 * np.log(x1)) ** 3
     X = np.vstack([x1, x2, x3]).T
     units = {"x2": "m/sec", "x3": "min/mm"}
     afreg = AutoFeatRegressor(verbose=1, units=units, feateng_steps=3)
@@ -151,11 +159,13 @@ def test_classification():
     assert list(df.columns)[:3] == ["x000", "x001", "x002"], "Wrong column names"
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("## Running sklearn Regressor tests")
     # we allow for nan in transform
-    successful_tests = set(["check_estimators_nan_inf"])
-    for estimator, check in check_estimator(AutoFeatRegressor(feateng_steps=1, featsel_runs=1, always_return_numpy=True), generate_only=True):
+    successful_tests = {"check_estimators_nan_inf"}
+    for estimator, check in check_estimator(
+        AutoFeatRegressor(feateng_steps=1, featsel_runs=1, always_return_numpy=True), generate_only=True
+    ):
         if check.func.__name__ not in successful_tests:
             print(check.func.__name__)
             successful_tests.add(check.func.__name__)
@@ -169,8 +179,10 @@ if __name__ == '__main__':
 
     print("## Running sklearn Classifier tests")
     # we allow for nan in transform
-    successful_tests = set(["check_estimators_nan_inf"])
-    for estimator, check in check_estimator(AutoFeatClassifier(feateng_steps=1, featsel_runs=1, always_return_numpy=True), generate_only=True):
+    successful_tests = {"check_estimators_nan_inf"}
+    for estimator, check in check_estimator(
+        AutoFeatClassifier(feateng_steps=1, featsel_runs=1, always_return_numpy=True), generate_only=True
+    ):
         if check.func.__name__ not in successful_tests:
             print(check.func.__name__)
             successful_tests.add(check.func.__name__)

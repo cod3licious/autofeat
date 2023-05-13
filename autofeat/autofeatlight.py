@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Author: Franziska Horn <cod3licious@gmail.com>
 # License: MIT
 
@@ -47,7 +46,7 @@ def _check_features(df, corrthr=0.995, verbose=0):
             useless_cols.update(correlated_cols[c])
     # return list of columns that should be kept
     if verbose:
-        print("[AutoFeatLight] %i columns identified as useless:" % len(useless_cols))
+        print(f"[AutoFeatLight] {len(useless_cols)} columns identified as useless:")
         print(sorted(useless_cols))
     return [c for c in df.columns if c not in useless_cols]
 
@@ -70,45 +69,44 @@ def _compute_additional_features(X, feature_names=None, compute_ratio=True, comp
     d = X.shape[1]
     n = 0
     if compute_ratio:
-        n += d*d - d
+        n += d * d - d
     if compute_product:
-        n += (d*d - d)//2
+        n += (d * d - d) // 2
     if not n:
         print("ERROR: call _compute_additional_features with compute_ratio and/or compute_product set to True")
         return None, []
     if not feature_names:
-        feature_names = ["x%i" % i for i in range(1, d+1)]
+        feature_names = [f"x{i}" for i in range(1, d + 1)]
     # compute new features
     if verbose:
-        print("[AutoFeatLight] computing %i additional features from %i original features" % (n, d))
+        print(f"[AutoFeatLight] computing {n} additional features from {d} original features")
     new_features = []
     X_new = np.zeros((X.shape[0], n))
     new_i = 0
     if compute_ratio:
         for i in range(d):
             # compute 1/x1
-            with np.errstate(divide='ignore'):
-                x = 1/X[:, i]
+            with np.errstate(divide="ignore"):
+                x = 1 / X[:, i]
             # instead of dividing by 0 for some data points we just set the new feature to 0 there
-            x[np.invert(np.isfinite(x))] = 0.
+            x[np.invert(np.isfinite(x))] = 0.0
             for j in range(d):
                 if i != j:
                     # multiply with x2 to get x2/x1
                     X_new[:, new_i] = x * X[:, j]
-                    new_features.append("%s / %s" % (feature_names[j], feature_names[i]))
+                    new_features.append(f"{feature_names[j]} / {feature_names[i]}")
                     new_i += 1
     if compute_product:
         for i in range(d):
-            for j in range(i+1, d):
+            for j in range(i + 1, d):
                 X_new[:, new_i] = X[:, i] * X[:, j]
-                new_features.append("%s * %s" % (feature_names[i], feature_names[j]))
+                new_features.append(f"{feature_names[i]} * {feature_names[j]}")
                 new_i += 1
-    assert new_i == n, "Internal Error in _compute_additional_features: new_i: %r, n: %r" % (new_i, n)
+    assert new_i == n, f"Internal Error in _compute_additional_features: new_i: {new_i}, n: {n}"
     return X_new, new_features
 
 
 class AutoFeatLight(BaseEstimator):
-
     def __init__(
         self,
         compute_ratio=True,
@@ -184,7 +182,7 @@ class AutoFeatLight(BaseEstimator):
         else:
             df_index = None
         # check input
-        cols = list(X.columns) if isinstance(X, pd.DataFrame) else ["x%i" % i for i in range(1, X.shape[1]+1)]
+        cols = list(X.columns) if isinstance(X, pd.DataFrame) else [f"x{i}" for i in range(1, X.shape[1] + 1)]
         X = check_array(X, force_all_finite="allow-nan")
         if not cols == self.original_columns_:
             raise ValueError("[AutoFeatLight] Not the same features as when calling fit.")
@@ -192,7 +190,9 @@ class AutoFeatLight(BaseEstimator):
         df = pd.DataFrame(X, columns=cols, index=df_index)[self.good_cols_org_]
         if self.compute_ratio or self.compute_product:
             # compute additional useful features
-            X_new, new_features = _compute_additional_features(df.to_numpy(), self.good_cols_org_, self.compute_ratio, self.compute_product, self.verbose)
+            X_new, new_features = _compute_additional_features(
+                df.to_numpy(), self.good_cols_org_, self.compute_ratio, self.compute_product, self.verbose
+            )
             df = pd.concat([df, pd.DataFrame(X_new, columns=new_features)], axis=1)
             df = df[self.features_]
         # scale/transform
@@ -219,7 +219,7 @@ class AutoFeatLight(BaseEstimator):
         else:
             df_index = None
         # store column names as they'll be lost in the other check
-        self.original_columns_ = list(X.columns) if isinstance(X, pd.DataFrame) else ["x%i" % i for i in range(1, X.shape[1]+1)]
+        self.original_columns_ = list(X.columns) if isinstance(X, pd.DataFrame) else [f"x{i}" for i in range(1, X.shape[1] + 1)]
         # check input
         X = check_array(X, force_all_finite="allow-nan")
         # transform X into a dataframe (again)
@@ -233,7 +233,9 @@ class AutoFeatLight(BaseEstimator):
         # compute additional features
         df = df[self.good_cols_org_]
         if self.compute_ratio or self.compute_product:
-            X_new, new_features = _compute_additional_features(df.to_numpy(), self.good_cols_org_, self.compute_ratio, self.compute_product, self.verbose)
+            X_new, new_features = _compute_additional_features(
+                df.to_numpy(), self.good_cols_org_, self.compute_ratio, self.compute_product, self.verbose
+            )
             # add new features to original dataframe
             df = pd.concat([df, pd.DataFrame(X_new, columns=new_features, index=df_index)], axis=1)
             # check again which of the features we should keep
@@ -246,11 +248,11 @@ class AutoFeatLight(BaseEstimator):
             self.scaler_ = StandardScaler(with_mean=False)
             X_new = self.scaler_.fit_transform(df.to_numpy())
             if self.power_transform:
-                self.power_transformer_ = PowerTransformer(method='yeo-johnson', standardize=True)
+                self.power_transformer_ = PowerTransformer(method="yeo-johnson", standardize=True)
                 X_new = self.power_transformer_.fit_transform(X_new)
             df = pd.DataFrame(X_new, columns=df.columns, index=df.index)
         if self.verbose > 0:
-            print("[AutoFeatLight] New data shape: %i x %i" % df.shape)
+            print(f"[AutoFeatLight] New data shape: {df.shape[0]} x {df.shape[1]}")
         self.n_features_in_ = len(self.original_columns_)
         # return either dataframe or array
         return df if self.return_df_ else df.to_numpy()

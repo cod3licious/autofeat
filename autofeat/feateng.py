@@ -1,9 +1,6 @@
-# -*- coding: utf-8 -*-
 # Author: Franziska Horn <cod3licious@gmail.com>
 # License: MIT
 
-from __future__ import unicode_literals, division, print_function, absolute_import
-from builtins import str
 import re
 import operator as op
 from functools import reduce
@@ -26,7 +23,7 @@ def colnames2symbols(c, i=0):
     # should not contain non-alphanumeric characters
     c = re.sub(r"\W+", "", c)
     if not c:
-        c = "x%03i" % i
+        c = f"x{i:03}"
     elif c[0].isdigit():
         c = "x" + c
     return c
@@ -131,7 +128,7 @@ def engineer_features(
     else:
         for c in start_features:
             if c not in df_org.columns:
-                raise ValueError("[feateng] start feature %r not in df_org.columns" % c)
+                raise ValueError(f"[feateng] start feature {c} not in df_org.columns")
     feature_pool = {c: sympy.symbols(colnames2symbols(c, i), real=True) for i, c in enumerate(start_features)}
     if max_steps < 1:
         if verbose > 0:
@@ -147,6 +144,7 @@ def engineer_features(
     def compile_func_transform(name, ft, plus_1=False):
         def _abs(x):
             return np.abs(x)
+
         # create temporary variable expression and apply it to precomputed feature
         t = sympy.symbols("t")
         if plus_1:
@@ -174,7 +172,7 @@ def engineer_features(
             "^3": lambda x: x**3,
             "1+": lambda x: 1 + x,
             "1-": lambda x: 1 - x,
-            "1/": lambda x: 1 / x
+            "1/": lambda x: 1 / x,
         }
         func_transform_units = {
             "exp": lambda x: np.exp(x),
@@ -189,7 +187,7 @@ def engineer_features(
             "^3": lambda x: x**3,
             "1+": lambda x: 1 + x,
             "1-": lambda x: 1 - x,
-            "1/": lambda x: 1 / x
+            "1/": lambda x: 1 / x,
         }
         # conditions on the original features that have to be met to apply the transformation
         func_transform_cond = {
@@ -205,7 +203,7 @@ def engineer_features(
             "^3": lambda x: np.all(np.abs(x) < 10000),
             "1+": lambda x: True,
             "1-": lambda x: True,
-            "1/": lambda x: np.all(x != 0)
+            "1/": lambda x: np.all(x != 0),
         }
         # apply transformations to the features in the given features list
         # modifies global variables df and feature_pool!
@@ -213,10 +211,8 @@ def engineer_features(
         nonlocal compiled_func_transformations, compiled_func_transforms_cond
 
         if compiled_func_transformations is None:
-            compiled_func_transformations = {k: compile_func_transform(k, v)
-                                             for k, v in func_transform.items()}
-            compiled_func_transformations["log_plus_1"] = compile_func_transform(
-                "log", func_transform["log"], plus_1=True)
+            compiled_func_transformations = {k: compile_func_transform(k, v) for k, v in func_transform.items()}
+            compiled_func_transformations["log_plus_1"] = compile_func_transform("log", func_transform["log"], plus_1=True)
 
             compiled_func_transforms_cond = {x[0]: nb.njit(x[1]) for x in func_transform_cond.items()}
 
@@ -226,10 +222,10 @@ def engineer_features(
         # store all new features in a preallocated numpy array before adding it to the dataframe
         feat_array = np.zeros((df.shape[0], len(features_list) * len(transformations)), dtype=np.float32)
         cat_features = {feat for feat in features_list if len(df[feat].unique()) <= 2}
-        func_transform_cond_cache = {}   # Cache for compiled_func_transforms_cond checks
+        func_transform_cond_cache = {}  # Cache for compiled_func_transforms_cond checks
         for i, feat in enumerate(features_list):
             if verbose and not i % 100:
-                print("[feateng] %15i/%15i features transformed" % (i, len(features_list)), end="\r")
+                print(f"[feateng] {i:15}/{len(features_list):15} features transformed", end="\r")
             for ft in transformations:
                 # (don't compute transformations on categorical features)
                 if feat in cat_features:
@@ -248,7 +244,7 @@ def engineer_features(
                         if units:
                             try:
                                 units[expr_name] = func_transform_units[ft](units[feat])
-                                units[expr_name].__dict__["_magnitude"] = 1.
+                                units[expr_name].__dict__["_magnitude"] = 1.0
                             except (pint.DimensionalityError, pint.OffsetUnitCalculusError):
                                 continue
                         feature_pool[expr_name] = expr
@@ -260,7 +256,7 @@ def engineer_features(
                         # near 0 variance test - sometimes all that's left is "e"
                         if np.isfinite(new_feat).all() and np.var(new_feat) > 1e-10:
                             corr = abs(np.corrcoef(new_feat, df[feat])[0, 1])
-                            if corr < 1.:
+                            if corr < 1.0:
                                 feat_array[:, len(new_features)] = new_feat
                                 new_features.append(expr_name)
                                 # correlation test: don't include features that are basically the same as the original features
@@ -268,8 +264,10 @@ def engineer_features(
                                 if corr < 0.95:
                                     uncorr_features.add(expr_name)
         if verbose > 0:
-            print("[feateng] Generated %i transformed features from %i original features - done." % (len(new_features), len(features_list)))
-        df = df.join(pd.DataFrame(feat_array[:, :len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
+            print(
+                f"[feateng] Generated {len(new_features)} transformed features from {len(features_list)} original features - done."
+            )
+        df = df.join(pd.DataFrame(feat_array[:, : len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
         return new_features, uncorr_features
 
     def compile_func_combinations(func_combinations):
@@ -288,7 +286,7 @@ def engineer_features(
             "x+y": lambda x, y: x + y,
             "x*y": lambda x, y: x * y,
             "x-y": lambda x, y: x - y,
-            "y-x": lambda x, y: y - x
+            "y-x": lambda x, y: y - x,
         }
         # get all feature combinations for the given feature tuples
         # modifies global variables df and feature_pool!
@@ -310,7 +308,7 @@ def engineer_features(
         feat_array = np.zeros((df.shape[0], len(feature_tuples) * len(combinations)), dtype=np.float32)
         for i, (feat1, feat2) in enumerate(feature_tuples):
             if verbose and not i % 100:
-                print("[feateng] %15i/%15i feature tuples combined" % (i, len(feature_tuples)), end="\r")
+                print(f"[feateng] {i:15}/{len(feature_tuples):15} feature tuples combined", end="\r")
             for fc in combinations:
                 expr = func_combinations[fc](feature_pool[feat1], feature_pool[feat2])
                 expr_name = str(expr)
@@ -319,7 +317,7 @@ def engineer_features(
                     if units:
                         try:
                             units[expr_name] = func_combinations[fc](units[feat1], units[feat2])
-                            units[expr_name].__dict__["_magnitude"] = 1.
+                            units[expr_name].__dict__["_magnitude"] = 1.0
                         except (pint.DimensionalityError, pint.OffsetUnitCalculusError):
                             continue
                     feature_pool[expr_name] = expr
@@ -328,7 +326,7 @@ def engineer_features(
                     # near 0 variance test - sometimes all that's left is "e"
                     if np.isfinite(new_feat).all() and np.var(new_feat) > 1e-10:
                         corr = max(abs(np.corrcoef(new_feat, df[feat1])[0, 1]), abs(np.corrcoef(new_feat, df[feat2])[0, 1]))
-                        if corr < 1.:
+                        if corr < 1.0:
                             feat_array[:, len(new_features)] = new_feat
                             new_features.append(expr_name)
                             # correlation test: don't include features that are basically the same as the original features
@@ -336,8 +334,10 @@ def engineer_features(
                             if corr < 0.95:
                                 uncorr_features.add(expr_name)
         if verbose > 0:
-            print("[feateng] Generated %i feature combinations from %i original feature tuples - done." % (len(new_features), len(feature_tuples)))
-        df = df.join(pd.DataFrame(feat_array[:, :len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
+            print(
+                f"[feateng] Generated {len(new_features)} feature combinations from {len(feature_tuples)} original feature tuples - done."
+            )
+        df = df.join(pd.DataFrame(feat_array[:, : len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
         return new_features, uncorr_features
 
     # get transformations of initial features
@@ -360,7 +360,7 @@ def engineer_features(
     while steps <= max_steps:
         # apply transformations on these new features
         if verbose > 0:
-            print("[feateng] Step %i: transformation of new features" % steps)
+            print(f"[feateng] Step {steps}: transformation of new features")
         temp_new, temp_uncorr = apply_transformations(new_features)
         new_features.extend(temp_new)
         uncorr_features.update(temp_uncorr)
@@ -368,14 +368,14 @@ def engineer_features(
         # get combinations of old and new features
         if steps <= max_steps:
             if verbose > 0:
-                print("[feateng] Step %i: combining old and new features" % steps)
+                print(f"[feateng] Step {steps}: combining old and new features")
             new_new_features, temp_uncorr = get_feature_combinations(list(product(original_features, new_features)))
             uncorr_features.update(temp_uncorr)
             steps += 1
         # and combinations of new features within themselves
         if steps <= max_steps:
             if verbose > 0:
-                print("[feateng] Step %i: combining new features" % steps)
+                print(f"[feateng] Step {steps}: combining new features")
             temp_new, temp_uncorr = get_feature_combinations(list(combinations(new_features, 2)))
             new_new_features.extend(temp_new)
             uncorr_features.update(temp_uncorr)
@@ -386,15 +386,30 @@ def engineer_features(
 
     # sort out all features that are just additions on the highest level or correlated with more basic features
     if verbose > 0:
-        print("[feateng] Generated altogether %i new features in %i steps" % (len(feature_pool) - len(start_features), max_steps))
+        print(f"[feateng] Generated altogether {len(feature_pool) - len(start_features)} new features in {max_steps} steps")
         print("[feateng] Removing correlated features, as well as additions at the highest level")
-    feature_pool = {c: feature_pool[c] for c in feature_pool if c in uncorr_features and not feature_pool[c].func == sympy.core.add.Add}
-    cols = [c for c in list(df.columns) if c in feature_pool and c not in df_org.columns]  # categorical cols not in feature_pool
+    feature_pool = {
+        c: feature_pool[c] for c in feature_pool if c in uncorr_features and not feature_pool[c].func == sympy.core.add.Add
+    }
+    cols = [
+        c for c in list(df.columns) if c in feature_pool and c not in df_org.columns
+    ]  # categorical cols not in feature_pool
     if cols:
         # check for correlated features again; this time with the start features
-        corrs = dict(zip(cols, np.max(np.abs(np.dot(StandardScaler().fit_transform(df[cols]).T, StandardScaler().fit_transform(df_org))/df_org.shape[0]), axis=1)))
+        corrs = dict(
+            zip(
+                cols,
+                np.max(
+                    np.abs(
+                        np.dot(StandardScaler().fit_transform(df[cols]).T, StandardScaler().fit_transform(df_org))
+                        / df_org.shape[0]
+                    ),
+                    axis=1,
+                ),
+            )
+        )
         cols = [c for c in cols if corrs[c] < 0.9]
     cols = list(df_org.columns) + cols
     if verbose > 0:
-        print("[feateng] Generated a total of %i additional features" % (len(feature_pool) - len(start_features)))
+        print(f"[feateng] Generated a total of {len(feature_pool) - len(start_features)} additional features")
     return df[cols], feature_pool

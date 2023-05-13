@@ -4,7 +4,7 @@
 This library contains the `AutoFeatRegressor` and `AutoFeatClassifier` models with a similar interface as `scikit-learn` models:
 - `fit()` function to fit the model parameters
 - `predict()` function to predict the target variable given the input
-- `predict_proba()` function to predict probabilities of the target variable given the input
+- `predict_proba()` function to predict probabilities of the target variable given the input (classifier only)
 - `score()` function to calculate the goodness of the fit (R^2/accuracy)
 - `fit_transform()` and `transform()` functions, which extend the given data by the additional features that were engineered and selected by the model
 
