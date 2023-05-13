@@ -16,7 +16,7 @@ from .feateng import engineer_features, n_cols_generated, colnames2symbols
 from .featsel import select_features
 
 
-def _parse_units(units, ureg=None, verbose=0):
+def _parse_units(units: dict, ureg: pint.UnitRegistry | None = None, verbose: int = 0):
     """
     Convert a dict with string units to pint quantities.
 
@@ -46,18 +46,18 @@ def _parse_units(units, ureg=None, verbose=0):
 class AutoFeatModel(BaseEstimator):
     def __init__(
         self,
-        problem_type="regression",
-        categorical_cols=None,
-        feateng_cols=None,
-        units=None,
-        feateng_steps=2,
-        featsel_runs=5,
-        max_gb=None,
-        transformations=("1/", "exp", "log", "abs", "sqrt", "^2", "^3"),
-        apply_pi_theorem=True,
-        always_return_numpy=False,
-        n_jobs=1,
-        verbose=0,
+        problem_type: str = "regression",
+        categorical_cols: list | None = None,
+        feateng_cols: list | None = None,
+        units: dict | None = None,
+        feateng_steps: int = 2,
+        featsel_runs: int = 5,
+        max_gb: int | None = None,
+        transformations: list | tuple = ("1/", "exp", "log", "abs", "sqrt", "^2", "^3"),
+        apply_pi_theorem: bool = True,
+        always_return_numpy: bool = False,
+        n_jobs: int = 1,
+        verbose: int = 0,
     ):
         """
         multi-step feature engineering and cross-validated feature selection to generate promising additional
@@ -123,7 +123,7 @@ class AutoFeatModel(BaseEstimator):
         """
         return {k: self.__dict__[k] if k != "feature_functions_" else {} for k in self.__dict__}
 
-    def _transform_categorical_cols(self, df):
+    def _transform_categorical_cols(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Transform categorical features into 0/1 encoding.
 
@@ -146,7 +146,7 @@ class AutoFeatModel(BaseEstimator):
             df.drop(columns=self.categorical_cols, inplace=True)
         return df
 
-    def _apply_pi_theorem(self, df):
+    def _apply_pi_theorem(self, df: pd.DataFrame) -> pd.DataFrame:
         if self.apply_pi_theorem and self.units:
             ureg = pint.UnitRegistry(auto_reduce_dimensions=True, autoconvert_offset_to_baseunit=True)
             parsed_units = _parse_units(self.units, ureg, self.verbose)
@@ -168,7 +168,7 @@ class AutoFeatModel(BaseEstimator):
                 df.loc[not_na_idx, f"PT{i}_{pint.formatter(r.items()).replace(' ', '')}"] = ptr
         return df
 
-    def _generate_features(self, df, new_feat_cols):
+    def _generate_features(self, df: pd.DataFrame, new_feat_cols: list) -> pd.DataFrame:
         """
         Generate additional features based on the feature formulas for all data points in the df.
         Only works after the model was fitted.
@@ -236,7 +236,7 @@ class AutoFeatModel(BaseEstimator):
         df = df.join(pd.DataFrame(feat_array, columns=new_feat_cols, index=df.index))
         return df
 
-    def _X2df(self, X):
+    def _X2df(self, X: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
         """
         Helper function that ensures correctness of the input data for classification tasks.
         Inputs:
@@ -260,7 +260,7 @@ class AutoFeatModel(BaseEstimator):
             self.always_return_numpy = temp
         return df
 
-    def fit_transform(self, X, y):
+    def fit_transform(self, X: np.ndarray | pd.DataFrame, y: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
         """
         Fits the regression model and returns a new dataframe with the additional features.
 
@@ -412,14 +412,14 @@ class AutoFeatModel(BaseEstimator):
             return df.to_numpy()
         return df
 
-    def fit(self, X, y):
+    def fit(self, X: np.ndarray | pd.DataFrame, y: np.ndarray | pd.DataFrame):
         if self.verbose:
             print("[AutoFeat] Warning: This just calls fit_transform() but does not return the transformed dataframe.")
             print("[AutoFeat] It is much more efficient to call fit_transform() instead of fit() and transform()!")
         _ = self.fit_transform(X, y)  # noqa
         return self
 
-    def transform(self, X):
+    def transform(self, X: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
         """
         Inputs:
             - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
@@ -449,29 +449,29 @@ class AutoFeatModel(BaseEstimator):
             return df.to_numpy()
         return df
 
-    def predict(self, X):
+    def predict(self, X: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
         """
         Inputs:
             - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
         Returns:
-            - y_pred: predicted targets return by prediction_model.predict()
+            - y_pred: predicted targets returned by prediction_model.predict()
         """
         check_is_fitted(self, ["prediction_model_"])
         df = self._X2df(X)
         return self.prediction_model_.predict(df[self.good_cols_].to_numpy())
 
-    def predict_proba(self, X):
+    def predict_proba(self, X: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
         """
         Inputs:
             - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
         Returns:
-            - y_pred: predicted targets probabilities return by prediction_model.predict_proba()
+            - y_pred: predicted targets probabilities returned by prediction_model.predict_proba()
         """
         check_is_fitted(self, ["prediction_model_"])
         df = self._X2df(X)
         return self.prediction_model_.predict_proba(df[self.good_cols_].to_numpy())
 
-    def score(self, X, y):
+    def score(self, X: np.ndarray | pd.DataFrame, y: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
         """
         Inputs:
             - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
@@ -506,17 +506,17 @@ class AutoFeatRegressor(AutoFeatModel, BaseEstimator, RegressorMixin):
 
     def __init__(
         self,
-        categorical_cols=None,
-        feateng_cols=None,
-        units=None,
-        feateng_steps=2,
-        featsel_runs=5,
-        max_gb=None,
-        transformations=("1/", "exp", "log", "abs", "sqrt", "^2", "^3"),
-        apply_pi_theorem=True,
-        always_return_numpy=False,
-        n_jobs=1,
-        verbose=0,
+        categorical_cols: list | None = None,
+        feateng_cols: list | None = None,
+        units: dict | None = None,
+        feateng_steps: int = 2,
+        featsel_runs: int = 5,
+        max_gb: int | None = None,
+        transformations: list | tuple = ("1/", "exp", "log", "abs", "sqrt", "^2", "^3"),
+        apply_pi_theorem: bool = True,
+        always_return_numpy: bool = False,
+        n_jobs: int = 1,
+        verbose: int = 0,
     ):
         super().__init__(
             "regression",
@@ -539,17 +539,17 @@ class AutoFeatClassifier(AutoFeatModel, BaseEstimator, ClassifierMixin):
 
     def __init__(
         self,
-        categorical_cols=None,
-        feateng_cols=None,
-        units=None,
-        feateng_steps=2,
-        featsel_runs=5,
-        max_gb=None,
-        transformations=("1/", "exp", "log", "abs", "sqrt", "^2", "^3"),
-        apply_pi_theorem=True,
-        always_return_numpy=False,
-        n_jobs=1,
-        verbose=0,
+        categorical_cols: list | None = None,
+        feateng_cols: list | None = None,
+        units: dict | None = None,
+        feateng_steps: int = 2,
+        featsel_runs: int = 5,
+        max_gb: int | None = None,
+        transformations: list | tuple = ("1/", "exp", "log", "abs", "sqrt", "^2", "^3"),
+        apply_pi_theorem: bool = True,
+        always_return_numpy: bool = False,
+        n_jobs: int = 1,
+        verbose: int = 0,
     ):
         super().__init__(
             "classification",

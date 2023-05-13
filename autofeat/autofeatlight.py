@@ -5,12 +5,13 @@ import sys
 import numpy as np
 import pandas as pd
 from collections import defaultdict
+from typing import Tuple
 from sklearn.base import BaseEstimator
 from sklearn.utils.validation import check_array, check_is_fitted
 from sklearn.preprocessing import StandardScaler, PowerTransformer
 
 
-def _check_features(df, corrthr=0.995, verbose=0):
+def _check_features(df: pd.DataFrame, corrthr: float = 0.995, verbose: int = 0) -> list:
     """
     Identify features with zeros variance or a correlation of (almost) 1 to other features, i.e., useless features.
 
@@ -51,7 +52,9 @@ def _check_features(df, corrthr=0.995, verbose=0):
     return [c for c in df.columns if c not in useless_cols]
 
 
-def _compute_additional_features(X, feature_names=None, compute_ratio=True, compute_product=True, verbose=0):
+def _compute_additional_features(
+    X: np.ndarray, feature_names: list | None = None, compute_ratio: bool = True, compute_product: bool = True, verbose: int = 0
+) -> Tuple[np.ndarray, list]:
     """
     Compute additional non-linear features from the original features (ratio or product of two features).
 
@@ -109,13 +112,13 @@ def _compute_additional_features(X, feature_names=None, compute_ratio=True, comp
 class AutoFeatLight(BaseEstimator):
     def __init__(
         self,
-        compute_ratio=True,
-        compute_product=True,
-        scale=False,
-        power_transform=False,
-        corrthr=0.995,
-        corrthr_init=0.99999,
-        verbose=0,
+        compute_ratio: bool = True,
+        compute_product: bool = True,
+        scale: bool = False,
+        power_transform: bool = False,
+        corrthr: float = 0.995,
+        corrthr_init: float = 0.99999,
+        verbose: int = 0,
     ):
         """
         Basic Feature Engineering:
@@ -150,7 +153,7 @@ class AutoFeatLight(BaseEstimator):
         self.corrthr = corrthr
         self.verbose = verbose
 
-    def fit(self, X):
+    def fit(self, X: np.ndarray | pd.DataFrame):
         """
         WARNING: call fit_transform instead!
 
@@ -163,7 +166,7 @@ class AutoFeatLight(BaseEstimator):
         _ = self.fit_transform(X)  # noqa
         return self
 
-    def transform(self, X):
+    def transform(self, X: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
         """
         Inputs:
             - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
@@ -204,7 +207,7 @@ class AutoFeatLight(BaseEstimator):
         # return either dataframe or array
         return df if self.return_df_ else df.to_numpy()
 
-    def fit_transform(self, X):
+    def fit_transform(self, X: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
         """
         Inputs:
             - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)

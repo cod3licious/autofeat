@@ -5,6 +5,7 @@ import re
 import operator as op
 from functools import reduce
 from itertools import combinations, product
+from typing import Callable, Tuple
 
 import numba as nb
 import numpy as np
@@ -15,7 +16,7 @@ from sklearn.preprocessing import StandardScaler
 import pint
 
 
-def colnames2symbols(c, i=0):
+def colnames2symbols(c: str | int, i: int = 0) -> str:
     # take a messy column name and transform it to something sympy can handle
     # worst case: i is the number of the features
     # has to be a string
@@ -29,7 +30,7 @@ def colnames2symbols(c, i=0):
     return c
 
 
-def ncr(n, r):
+def ncr(n: int, r: int) -> int:
     # compute number of combinations for n chose r
     r = min(r, n - r)
     numer = reduce(op.mul, range(n, n - r, -1), 1)
@@ -37,7 +38,7 @@ def ncr(n, r):
     return numer // denom
 
 
-def n_cols_generated(n_features, max_steps, n_transformations=7, n_combinations=4):
+def n_cols_generated(n_features: int, max_steps: int, n_transformations: int = 7, n_combinations: int = 4) -> int:
     """
     computes the upper bound of how many features will be generated based on n_features to start with
     and max_steps feateng steps.
@@ -88,13 +89,13 @@ def n_cols_generated(n_features, max_steps, n_transformations=7, n_combinations=
 
 
 def engineer_features(
-    df_org,
-    start_features=None,
-    units=None,
-    max_steps=3,
-    transformations=("1/", "exp", "log", "abs", "sqrt", "^2", "^3"),
-    verbose=0,
-):
+    df_org: pd.DataFrame,
+    start_features: list | None = None,
+    units: dict | None = None,
+    max_steps: int = 3,
+    transformations: list | tuple = ("1/", "exp", "log", "abs", "sqrt", "^2", "^3"),
+    verbose: int = 0,
+) -> Tuple[pd.DataFrame, dict]:
     """
     Given a DataFrame with original features, perform the feature engineering routine for max_steps.
     It starts with a transformation of the original features (applying log, ^2, sqrt, etc.),
@@ -141,7 +142,7 @@ def engineer_features(
     compiled_func_transforms_cond = None
     compiled_func_combinations = None
 
-    def compile_func_transform(name, ft, plus_1=False):
+    def compile_func_transform(name: str, ft: Callable, plus_1: bool = False):
         def _abs(x):
             return np.abs(x)
 
@@ -157,7 +158,7 @@ def engineer_features(
             fn = lambdify(t, expr_temp)
         return nb.njit(fn)
 
-    def apply_transformations(features_list):
+    def apply_transformations(features_list: list) -> Tuple[list, set]:
         # feature transformations
         func_transform = {
             "exp": lambda x: sympy.exp(x),
@@ -270,7 +271,7 @@ def engineer_features(
         df = df.join(pd.DataFrame(feat_array[:, : len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
         return new_features, uncorr_features
 
-    def compile_func_combinations(func_combinations):
+    def compile_func_combinations(func_combinations: dict) -> dict:
         d = {}
         for fc in func_combinations:
             s, t = sympy.symbols("s t")
@@ -280,7 +281,7 @@ def engineer_features(
             d[fc] = vect(fn)
         return d
 
-    def get_feature_combinations(feature_tuples):
+    def get_feature_combinations(feature_tuples: list) -> Tuple[list, set]:
         # new features as combinations of two other features
         func_combinations = {
             "x+y": lambda x, y: x + y,

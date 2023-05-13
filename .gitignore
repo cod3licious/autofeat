@@ -13,3 +13,4 @@ build/
 autofeat.egg-info/
 MANIFEST.in
 setup.py
+pyproject.toml

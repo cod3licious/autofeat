@@ -12,7 +12,7 @@ import sklearn.linear_model as lm
 from .nb_utils import nb_standard_scale
 
 
-def _add_noise_features(X):
+def _add_noise_features(X: np.ndarray):
     """
     Adds 3-1.5*d additional noise features to X.
 
@@ -32,7 +32,9 @@ def _add_noise_features(X):
     return X
 
 
-def _noise_filtering(X, target, good_cols=[], problem_type="regression"):
+def _noise_filtering(
+    X: np.ndarray, target: np.ndarray, good_cols: list | None = None, problem_type: str = "regression"
+) -> list:
     """
     Trains a prediction model with additional noise features and selects only those of the
     original features that have a higher coefficient than any of the noise features.
@@ -46,9 +48,9 @@ def _noise_filtering(X, target, good_cols=[], problem_type="regression"):
         - good_cols: list of noise filtered column names
     """
     n_feat = X.shape[1]
-    assert len(good_cols) == n_feat, "fewer column names provided than features in X."
-    if not good_cols:
+    if good_cols is None or not len(good_cols):
         good_cols = list(range(n_feat))
+    assert len(good_cols) == n_feat, "fewer column names provided than features in X."
     # perform noise filtering on these features
     if problem_type == "regression":
         model = lm.LassoLarsCV(cv=5, eps=1e-8)
@@ -80,7 +82,7 @@ def _noise_filtering(X, target, good_cols=[], problem_type="regression"):
     return good_cols
 
 
-def _select_features_1run(df, target, problem_type="regression", verbose=0):
+def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: str = "regression", verbose: int = 0) -> list:
     """
     One feature selection run.
 
@@ -123,7 +125,7 @@ def _select_features_1run(df, target, problem_type="regression", verbose=0):
     initial_cols = list(df.columns[coefs > thr])
     # noise filter
     initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, problem_type)
-    good_cols = set(initial_cols)
+    good_cols_set = set(initial_cols)
     if verbose > 0:
         print(f"[featsel]\t {len(initial_cols)} initial features.")
     # add noise features
@@ -158,18 +160,28 @@ def _select_features_1run(df, target, problem_type="regression", verbose=0):
             weights = dict(zip(current_cols, coefs[: len(current_cols)]))
             # only include features that are more important than our known noise features
             noise_w_thr = np.max(coefs[len(current_cols) :])
-            good_cols.update([c for c in weights if abs(weights[c]) > noise_w_thr])
+            good_cols_set.update([c for c in weights if abs(weights[c]) > noise_w_thr])
             if verbose > 0:
-                print(f"[featsel]\t Split {i + 1:2}/{n_splits}: {len(good_cols):3} candidate features identified.", end="\r")
+                print(
+                    f"[featsel]\t Split {i + 1:2}/{n_splits}: {len(good_cols_set):3} candidate features identified.", end="\r"
+                )
     # noise filtering on the combination of features
-    good_cols = list(good_cols)
+    good_cols = list(good_cols_set)
     good_cols = _noise_filtering(df[good_cols].to_numpy(), target, good_cols, problem_type)
     if verbose > 0:
         print(f"\n[featsel]\t Selected {len(good_cols):3} features after noise filtering.")
     return good_cols
 
 
-def select_features(df, target, featsel_runs=5, keep=None, problem_type="regression", n_jobs=1, verbose=0):
+def select_features(
+    df: pd.DataFrame,
+    target: np.ndarray,
+    featsel_runs: int = 5,
+    keep: list | None = None,
+    problem_type: str = "regression",
+    n_jobs: int = 1,
+    verbose: int = 0,
+) -> list:
     """
     Selects predictive features given the data and targets.
 
@@ -210,7 +222,7 @@ def select_features(df, target, featsel_runs=5, keep=None, problem_type="regress
 
     # select good features in k runs in parallel
     # by doing sort of a cross-validation (i.e., randomly subsample data points)
-    def run_select_features(i):
+    def run_select_features(i: int):
         if verbose > 0:
             print(f"[featsel] Feature selection run {i + 1}/{featsel_runs}")
         np.random.seed(i)
@@ -225,7 +237,7 @@ def select_features(df, target, featsel_runs=5, keep=None, problem_type="regress
                 selected_columns.extend(run_select_features(i))
         else:
 
-            def flatten_lists(l):
+            def flatten_lists(l: list):
                 return [item for sublist in l for item in sublist]
 
             selected_columns = flatten_lists(
@@ -274,11 +286,11 @@ def select_features(df, target, featsel_runs=5, keep=None, problem_type="regress
 class FeatureSelector(BaseEstimator):
     def __init__(
         self,
-        problem_type="regression",
-        featsel_runs=5,
-        keep=None,
-        n_jobs=1,
-        verbose=0,
+        problem_type: str = "regression",
+        featsel_runs: int = 5,
+        keep: list | None = None,
+        n_jobs: int = 1,
+        verbose: int = 0,
     ):
         """
         multi-step cross-validated feature selection
@@ -302,7 +314,7 @@ class FeatureSelector(BaseEstimator):
         self.n_jobs = n_jobs
         self.verbose = verbose
 
-    def fit(self, X, y):
+    def fit(self, X: np.ndarray | pd.DataFrame, y: np.ndarray | pd.DataFrame):
         """
         Selects features.
 
@@ -329,7 +341,7 @@ class FeatureSelector(BaseEstimator):
         self.n_features_in_ = X.shape[1]
         return self
 
-    def transform(self, X):
+    def transform(self, X: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
         """
         Inputs:
             - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
@@ -358,7 +370,7 @@ class FeatureSelector(BaseEstimator):
             new_X = new_X.to_numpy()
         return new_X
 
-    def fit_transform(self, X, y):
+    def fit_transform(self, X: np.ndarray | pd.DataFrame, y: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
         """
         Selects features and returns only those selected.
 
