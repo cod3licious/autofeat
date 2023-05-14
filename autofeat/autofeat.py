@@ -134,7 +134,7 @@ class AutoFeatModel(BaseEstimator):
         """
         self.categorical_cols_map_ = {}
         if self.categorical_cols:
-            e = OneHotEncoder(sparse=False, categories="auto")
+            e = OneHotEncoder(sparse_output=False, categories="auto")
             for c in self.categorical_cols:
                 if c not in df.columns:
                     raise ValueError(f"[AutoFeat] categorical_col {c} not in df.columns")
@@ -249,7 +249,7 @@ class AutoFeatModel(BaseEstimator):
         # check input variables
         X = check_array(X, dtype=None)
         if not cols:
-            cols = ["x{i:03}" for i in range(X.shape[1])]
+            cols = [f"x{i:03}" for i in range(X.shape[1])]
         # transform X into a dataframe (again)
         df = pd.DataFrame(X, columns=cols)
         # do we need to call transform?
@@ -364,6 +364,8 @@ class AutoFeatModel(BaseEstimator):
         # re-generate all good feature again; for all data points this time
         self.feature_functions_ = {}
         df = self._generate_features(df, self.new_feat_cols_)
+        # to prevent an error because sometimes the column names are numpy.str_ instead of normal str
+        df.columns = [str(c) for c in df.columns]
         # filter out unnecessary junk from self.feature_formulas_
         self.feature_formulas_ = {f: self.feature_formulas_[f] for f in self.new_feat_cols_ + self.feateng_cols_}
         self.feature_functions_ = {f: self.feature_functions_[f] for f in self.new_feat_cols_}
@@ -445,6 +447,8 @@ class AutoFeatModel(BaseEstimator):
         df = self._apply_pi_theorem(df)
         # generate engineered features
         df = self._generate_features(df, self.new_feat_cols_)
+        # to prevent an error because sometimes the column names are numpy.str_ instead of normal str
+        df.columns = [str(c) for c in df.columns]
         if self.always_return_numpy:
             return df.to_numpy()
         return df
@@ -459,17 +463,6 @@ class AutoFeatModel(BaseEstimator):
         check_is_fitted(self, ["prediction_model_"])
         df = self._X2df(X)
         return self.prediction_model_.predict(df[self.good_cols_].to_numpy())
-
-    def predict_proba(self, X: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
-        """
-        Inputs:
-            - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
-        Returns:
-            - y_pred: predicted targets probabilities returned by prediction_model.predict_proba()
-        """
-        check_is_fitted(self, ["prediction_model_"])
-        df = self._X2df(X)
-        return self.prediction_model_.predict_proba(df[self.good_cols_].to_numpy())
 
     def score(self, X: np.ndarray | pd.DataFrame, y: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
         """
@@ -565,3 +558,14 @@ class AutoFeatClassifier(AutoFeatModel, BaseEstimator, ClassifierMixin):
             n_jobs,
             verbose,
         )
+
+    def predict_proba(self, X: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
+        """
+        Inputs:
+            - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
+        Returns:
+            - y_pred: predicted targets probabilities returned by prediction_model.predict_proba()
+        """
+        check_is_fitted(self, ["prediction_model_"])
+        df = self._X2df(X)
+        return self.prediction_model_.predict_proba(df[self.good_cols_].to_numpy())

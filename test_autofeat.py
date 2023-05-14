@@ -120,16 +120,16 @@ def test_categorical_cols():
     afreg = AutoFeatRegressor(verbose=1, categorical_cols=["x4"], feateng_steps=3)
     df = afreg.fit_transform(X, target)
     assert list(df.columns)[3:6] == [
-        "cat_x4_'2'",
-        "cat_x4_'4'",
-        "cat_x4_'hello'",
+        "cat_x4_2",
+        "cat_x4_4",
+        "cat_x4_hello",
     ], "categorical_cols were not transformed correctly"
     assert "x4" not in df.columns, "categorical_cols weren't deleted from df"
     df = afreg.transform(X)
     assert list(df.columns)[3:6] == [
-        "cat_x4_'2'",
-        "cat_x4_'4'",
-        "cat_x4_'hello'",
+        "cat_x4_2",
+        "cat_x4_4",
+        "cat_x4_hello",
     ], "categorical_cols were not transformed correctly"
     assert "x4" not in df.columns, "categorical_cols weren't deleted from df"
     assert afreg.score(X, target) >= 0.999, "R^2 should be 1."
