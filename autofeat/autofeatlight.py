@@ -1,6 +1,7 @@
 # Author: Franziska Horn <cod3licious@gmail.com>
 # License: MIT
 
+from __future__ import annotations
 import sys
 import numpy as np
 import pandas as pd
@@ -54,7 +55,7 @@ def _check_features(df: pd.DataFrame, corrthr: float = 0.995, verbose: int = 0) 
 
 def _compute_additional_features(
     X: np.ndarray, feature_names: list | None = None, compute_ratio: bool = True, compute_product: bool = True, verbose: int = 0
-) -> Tuple[np.ndarray, list]:
+) -> tuple[np.ndarray, list]:
     """
     Compute additional non-linear features from the original features (ratio or product of two features).
 

@@ -1,6 +1,7 @@
 # Author: Franziska Horn <cod3licious@gmail.com>
 # License: MIT
 
+from __future__ import annotations
 import re
 import operator as op
 from functools import reduce
@@ -95,7 +96,7 @@ def engineer_features(
     max_steps: int = 3,
     transformations: list | tuple = ("1/", "exp", "log", "abs", "sqrt", "^2", "^3"),
     verbose: int = 0,
-) -> Tuple[pd.DataFrame, dict]:
+) -> tuple[pd.DataFrame, dict]:
     """
     Given a DataFrame with original features, perform the feature engineering routine for max_steps.
     It starts with a transformation of the original features (applying log, ^2, sqrt, etc.),
@@ -158,7 +159,7 @@ def engineer_features(
             fn = lambdify(t, expr_temp)
         return nb.njit(fn)
 
-    def apply_transformations(features_list: list) -> Tuple[list, set]:
+    def apply_transformations(features_list: list) -> tuple[list, set]:
         # feature transformations
         func_transform = {
             "exp": lambda x: sympy.exp(x),
@@ -281,7 +282,7 @@ def engineer_features(
             d[fc] = vect(fn)
         return d
 
-    def get_feature_combinations(feature_tuples: list) -> Tuple[list, set]:
+    def get_feature_combinations(feature_tuples: list) -> tuple[list, set]:
         # new features as combinations of two other features
         func_combinations = {
             "x+y": lambda x, y: x + y,

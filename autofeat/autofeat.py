@@ -1,6 +1,7 @@
 # Author: Franziska Horn <cod3licious@gmail.com>
 # License: MIT
 
+from __future__ import annotations
 import warnings
 import numba as nb
 import numpy as np

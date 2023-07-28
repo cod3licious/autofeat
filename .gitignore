@@ -6,11 +6,14 @@
 *.csv
 *.db
 .ipynb_checkpoints/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 __pycache__/
 examples/data/
 dist/
 build/
 autofeat.egg-info/
 MANIFEST.in
-setup.py
+setup_old.py
 pyproject.toml

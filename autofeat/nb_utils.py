@@ -1,6 +1,7 @@
 # Author: Jeethu Rao <jboloor@acm.org>
 # License: MIT
 
+from __future__ import annotations
 import numba as nb
 import numpy as np
 
