@@ -5,6 +5,8 @@
 *.py~
 *.csv
 *.db
+*.sublime-project
+*.sublime-workspace
 .ipynb_checkpoints/
 .mypy_cache/
 .pytest_cache/
@@ -13,7 +15,8 @@ __pycache__/
 examples/data/
 dist/
 build/
-autofeat.egg-info/
+*.egg-info/
 MANIFEST.in
-setup_old.py
 pyproject.toml
+pyrightconfig.json
+poetry.lock

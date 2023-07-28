@@ -2,19 +2,20 @@
 # License: MIT
 
 from __future__ import annotations
-import re
+
 import operator as op
+import re
 from functools import reduce
 from itertools import combinations, product
-from typing import Callable, Tuple
+from typing import Callable
 
 import numba as nb
 import numpy as np
 import pandas as pd
-import sympy
-from sympy.utilities.lambdify import lambdify
-from sklearn.preprocessing import StandardScaler
 import pint
+import sympy
+from sklearn.preprocessing import StandardScaler
+from sympy.utilities.lambdify import lambdify
 
 
 def colnames2symbols(c: str | int, i: int = 0) -> str:
@@ -120,6 +121,7 @@ def engineer_features(
                            "1/", "exp", "log", "abs", "sqrt", "^2", "^3", "1+", "1-", "sin", "cos", "exp-", "2^"
                            (first 7, i.e., up to ^3, are applied by default)
         - verbose: verbosity level (int; default: 0)
+
     Returns:
         - df: new DataFrame with all features in columns
         - feature_pool: dict with {col: sympy formula} formulas to generate each feature
@@ -131,7 +133,7 @@ def engineer_features(
         for c in start_features:
             if c not in df_org.columns:
                 raise ValueError(f"[feateng] start feature {c} not in df_org.columns")
-    feature_pool = {c: sympy.symbols(colnames2symbols(c, i), real=True) for i, c in enumerate(start_features)}
+    feature_pool = {c: sympy.symbols(colnames2symbols(c, i), real=True) for i, c in enumerate(start_features)}  # type: ignore
     if max_steps < 1:
         if verbose > 0:
             print("[feateng] Warning: no features generated for max_steps < 1.")
@@ -149,14 +151,8 @@ def engineer_features(
 
         # create temporary variable expression and apply it to precomputed feature
         t = sympy.symbols("t")
-        if plus_1:
-            expr_temp = ft(t + 1)
-        else:
-            expr_temp = ft(t)
-        if name == "abs":
-            fn = _abs
-        else:
-            fn = lambdify(t, expr_temp)
+        expr_temp = ft(t + 1) if plus_1 else ft(t)
+        fn = _abs if name == "abs" else lambdify(t, expr_temp)
         return nb.njit(fn)
 
     def apply_transformations(features_list: list) -> tuple[list, set]:
@@ -219,7 +215,7 @@ def engineer_features(
             compiled_func_transforms_cond = {x[0]: nb.njit(x[1]) for x in func_transform_cond.items()}
 
         # returns a list of new features that were generated
-        new_features = []
+        new_features: list[str] = []
         uncorr_features = set()
         # store all new features in a preallocated numpy array before adding it to the dataframe
         feat_array = np.zeros((df.shape[0], len(features_list) * len(transformations)), dtype=np.float32)
@@ -267,7 +263,7 @@ def engineer_features(
                                     uncorr_features.add(expr_name)
         if verbose > 0:
             print(
-                f"[feateng] Generated {len(new_features)} transformed features from {len(features_list)} original features - done."
+                f"[feateng] Generated {len(new_features)} transformed features from {len(features_list)} original features - done.",
             )
         df = df.join(pd.DataFrame(feat_array[:, : len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
         return new_features, uncorr_features
@@ -299,12 +295,9 @@ def engineer_features(
 
         # only compute all combinations if there are more transformations applied afterwards
         # additions at the highest level are sorted out later anyways
-        if steps == max_steps:
-            combinations = ["x*y"]
-        else:
-            combinations = list(func_combinations.keys())
+        combinations = ["x*y"] if steps == max_steps else list(func_combinations.keys())
         # returns a list of new features that were generated
-        new_features = []
+        new_features: list[str] = []
         uncorr_features = set()
         # store all new features in a preallocated numpy array before adding it to the dataframe
         feat_array = np.zeros((df.shape[0], len(feature_tuples) * len(combinations)), dtype=np.float32)
@@ -337,7 +330,7 @@ def engineer_features(
                                 uncorr_features.add(expr_name)
         if verbose > 0:
             print(
-                f"[feateng] Generated {len(new_features)} feature combinations from {len(feature_tuples)} original feature tuples - done."
+                f"[feateng] Generated {len(new_features)} feature combinations from {len(feature_tuples)} original feature tuples - done.",
             )
         df = df.join(pd.DataFrame(feat_array[:, : len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
         return new_features, uncorr_features
@@ -388,10 +381,10 @@ def engineer_features(
 
     # sort out all features that are just additions on the highest level or correlated with more basic features
     if verbose > 0:
-        print(f"[feateng] Generated altogether {len(feature_pool) - len(start_features)} new features in {max_steps} steps")
+        print(f"[feateng] Generated altogether {len(feature_pool) - len(start_features)} new features in {max_steps} steps")  # type: ignore
         print("[feateng] Removing correlated features, as well as additions at the highest level")
     feature_pool = {
-        c: feature_pool[c] for c in feature_pool if c in uncorr_features and not feature_pool[c].func == sympy.core.add.Add
+        c: feature_pool[c] for c in feature_pool if c in uncorr_features and feature_pool[c].func != sympy.core.add.Add
     }
     cols = [
         c for c in list(df.columns) if c in feature_pool and c not in df_org.columns
@@ -404,14 +397,14 @@ def engineer_features(
                 np.max(
                     np.abs(
                         np.dot(StandardScaler().fit_transform(df[cols]).T, StandardScaler().fit_transform(df_org))
-                        / df_org.shape[0]
+                        / df_org.shape[0],
                     ),
                     axis=1,
                 ),
-            )
+            ),
         )
         cols = [c for c in cols if corrs[c] < 0.9]
     cols = list(df_org.columns) + cols
     if verbose > 0:
-        print(f"[feateng] Generated a total of {len(feature_pool) - len(start_features)} additional features")
+        print(f"[feateng] Generated a total of {len(feature_pool) - len(start_features)} additional features")  # type: ignore
     return df[cols], feature_pool

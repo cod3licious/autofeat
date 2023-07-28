@@ -2,14 +2,17 @@
 # License: MIT
 
 from __future__ import annotations
+
 import warnings
+from collections import Counter
+
 import numpy as np
 import pandas as pd
-from collections import Counter
+import sklearn.linear_model as lm
 from joblib import Parallel, delayed
 from sklearn.base import BaseEstimator
-from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
-import sklearn.linear_model as lm
+from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
+
 from .nb_utils import nb_standard_scale
 
 
@@ -29,12 +32,14 @@ def _add_noise_features(X: np.ndarray):
         X = np.hstack([X, rand_noise])
     # normally distributed noise
     rand_noise = np.random.randn(X.shape[0], max(3, int(0.5 * n_feat)))
-    X = np.hstack([X, rand_noise])
-    return X
+    return np.hstack([X, rand_noise])
 
 
 def _noise_filtering(
-    X: np.ndarray, target: np.ndarray, good_cols: list | None = None, problem_type: str = "regression"
+    X: np.ndarray,
+    target: np.ndarray,
+    good_cols: list | None = None,
+    problem_type: str = "regression",
 ) -> list:
     """
     Trains a prediction model with additional noise features and selects only those of the
@@ -45,6 +50,7 @@ def _noise_filtering(
         - target: n dimensional array with targets corresponding to the data points in X
         - good_cols: list of column names for the features in X
         - problem_type: str, either "regression" or "classification" (default: "regression")
+
     Returns:
         - good_cols: list of noise filtered column names
     """
@@ -71,11 +77,8 @@ def _noise_filtering(
                 rand_idx = np.random.permutation(X.shape[0])
                 model.fit(X[rand_idx], target[rand_idx])
             # model.fit(X, target)
-        if problem_type == "regression":
-            coefs = np.abs(model.coef_)
-        else:
-            # model.coefs_ is n_classes x n_features, but we need n_features
-            coefs = np.max(np.abs(model.coef_), axis=0)
+        # for classification, model.coefs_ is n_classes x n_features, but we need n_features
+        coefs = np.abs(model.coef_) if problem_type == "regression" else np.max(np.abs(model.coef_), axis=0)
         weights = dict(zip(good_cols, coefs[: len(good_cols)]))
         # only include features that are more important than our known noise features
         noise_w_thr = np.max(coefs[n_feat:])
@@ -93,6 +96,7 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
         - target: n dimensional array with targets corresponding to the data points in df
         - problem_type: str, either "regression" or "classification" (default: "regression")
         - verbose: verbosity level (int; default: 0)
+
     Returns:
         - good_cols: list of column names for df with which a prediction model can be trained
     """
@@ -116,11 +120,8 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
             rand_idx = np.random.permutation(df.shape[0])
             model.fit(df.iloc[rand_idx], target[rand_idx])
         # model.fit(df, target)
-    if problem_type == "regression":
-        coefs = np.abs(model.coef_)
-    else:
-        # model.coefs_ is n_classes x n_features, but we need n_features
-        coefs = np.max(np.abs(model.coef_), axis=0)
+    # for classification, model.coefs_ is n_classes x n_features, but we need n_features
+    coefs = np.abs(model.coef_) if problem_type == "regression" else np.max(np.abs(model.coef_), axis=0)
     # weight threshold: select at most 0.2*n_train initial features
     thr = sorted(coefs, reverse=True)[min(df.shape[1] - 1, df.shape[0] // 5)]
     initial_cols = list(df.columns[coefs > thr])
@@ -153,18 +154,16 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
                     model.fit(X[rand_idx], target[rand_idx])
                 # model.fit(X, target)
             current_cols.extend(initial_cols)
-            if problem_type == "regression":
-                coefs = np.abs(model.coef_)
-            else:
-                # model.coefs_ is n_classes x n_features, but we need n_features
-                coefs = np.max(np.abs(model.coef_), axis=0)
+            # for classification, model.coefs_ is n_classes x n_features, but we need n_features
+            coefs = np.abs(model.coef_) if problem_type == "regression" else np.max(np.abs(model.coef_), axis=0)
             weights = dict(zip(current_cols, coefs[: len(current_cols)]))
             # only include features that are more important than our known noise features
             noise_w_thr = np.max(coefs[len(current_cols) :])
             good_cols_set.update([c for c in weights if abs(weights[c]) > noise_w_thr])
             if verbose > 0:
                 print(
-                    f"[featsel]\t Split {i + 1:2}/{n_splits}: {len(good_cols_set):3} candidate features identified.", end="\r"
+                    f"[featsel]\t Split {i + 1:2}/{n_splits}: {len(good_cols_set):3} candidate features identified.",
+                    end="\r",
                 )
     # noise filtering on the combination of features
     good_cols = list(good_cols_set)
@@ -195,6 +194,7 @@ def select_features(
         - problem_type: str, either "regression" or "classification" (default: "regression")
         - n_jobs: how many jobs to run when selecting the features in parallel (int; default: 1)
         - verbose: verbosity level (int; default: 0)
+
     Returns:
         - good_cols: list of column names for df with which a regression model can be trained
     """
@@ -203,7 +203,7 @@ def select_features(
     if keep is None:
         keep = []
     # check that keep columns are actually in df (- the columns might have been transformed to strings!)
-    keep = [c for c in keep if c in df.columns and not str(c) in df.columns] + [str(c) for c in keep if str(c) in df.columns]
+    keep = [c for c in keep if c in df.columns and str(c) not in df.columns] + [str(c) for c in keep if str(c) in df.columns]
     # scale features to have 0 mean and unit std
     if verbose > 0:
         if featsel_runs > df.shape[0]:
@@ -212,10 +212,7 @@ def select_features(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         df_scaled = pd.DataFrame(nb_standard_scale(df.to_numpy()), columns=df.columns, dtype=np.float32)
-        if problem_type == "regression":
-            target_scaled = nb_standard_scale(target.reshape(-1, 1)).ravel()
-        else:
-            target_scaled = target
+        target_scaled = nb_standard_scale(target.reshape(-1, 1)).ravel() if problem_type == "regression" else target
     if verbose > 0:
         print("done.")
 
@@ -242,14 +239,16 @@ def select_features(
                 return [item for sublist in l for item in sublist]
 
             selected_columns = flatten_lists(
-                Parallel(n_jobs=n_jobs, verbose=100 * verbose)(delayed(run_select_features)(i) for i in range(featsel_runs))
+                Parallel(n_jobs=n_jobs, verbose=100 * verbose)(delayed(run_select_features)(i) for i in range(featsel_runs)),
             )
 
         if selected_columns:
-            selected_columns = Counter(selected_columns)
+            selected_columns_counter = Counter(selected_columns)
             # sort by frequency, but down weight longer formulas to break ties
             selected_columns = sorted(
-                selected_columns, key=lambda x: selected_columns[x] - 0.000001 * len(str(x)), reverse=True
+                selected_columns_counter,
+                key=lambda x: selected_columns_counter[x] - 0.000001 * len(str(x)),
+                reverse=True,
             )
             if verbose > 0:
                 print(f"[featsel] {len(selected_columns)} features after {featsel_runs} feature selection runs")
@@ -337,7 +336,13 @@ class FeatureSelector(BaseEstimator):
         df = pd.DataFrame(X, columns=cols)
         # do the feature selection
         self.good_cols_ = select_features(
-            df, target, self.featsel_runs, self.keep, self.problem_type, self.n_jobs, self.verbose
+            df,
+            target,
+            self.featsel_runs,
+            self.keep,
+            self.problem_type,
+            self.n_jobs,
+            self.verbose,
         )
         self.n_features_in_ = X.shape[1]
         return self
@@ -346,6 +351,7 @@ class FeatureSelector(BaseEstimator):
         """
         Inputs:
             - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
+
         Returns:
             - new_X: new pandas dataframe or numpy array with only the good features
         """

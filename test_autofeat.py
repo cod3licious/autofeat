@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
 from sklearn.utils.estimator_checks import check_estimator
-from autofeat import AutoFeatRegressor, AutoFeatClassifier
+
+from autofeat import AutoFeatClassifier, AutoFeatRegressor
 
 
 def get_random_data(seed=15):
@@ -164,7 +165,8 @@ if __name__ == "__main__":
     # we allow for nan in transform
     successful_tests = {"check_estimators_nan_inf"}
     for estimator, check in check_estimator(
-        AutoFeatRegressor(feateng_steps=1, featsel_runs=1, always_return_numpy=True), generate_only=True
+        AutoFeatRegressor(feateng_steps=1, featsel_runs=1, always_return_numpy=True),
+        generate_only=True,
     ):
         if check.func.__name__ not in successful_tests:
             print(check.func.__name__)
@@ -181,7 +183,8 @@ if __name__ == "__main__":
     # we allow for nan in transform
     successful_tests = {"check_estimators_nan_inf"}
     for estimator, check in check_estimator(
-        AutoFeatClassifier(feateng_steps=1, featsel_runs=1, always_return_numpy=True), generate_only=True
+        AutoFeatClassifier(feateng_steps=1, featsel_runs=1, always_return_numpy=True),
+        generate_only=True,
     ):
         if check.func.__name__ not in successful_tests:
             print(check.func.__name__)

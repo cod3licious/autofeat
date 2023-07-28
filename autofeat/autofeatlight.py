@@ -2,14 +2,15 @@
 # License: MIT
 
 from __future__ import annotations
+
 import sys
+from collections import defaultdict
+
 import numpy as np
 import pandas as pd
-from collections import defaultdict
-from typing import Tuple
 from sklearn.base import BaseEstimator
+from sklearn.preprocessing import PowerTransformer, StandardScaler
 from sklearn.utils.validation import check_array, check_is_fitted
-from sklearn.preprocessing import StandardScaler, PowerTransformer
 
 
 def _check_features(df: pd.DataFrame, corrthr: float = 0.995, verbose: int = 0) -> list:
@@ -21,6 +22,7 @@ def _check_features(df: pd.DataFrame, corrthr: float = 0.995, verbose: int = 0) 
         - corrthr: threshold for correlations: if a feature has a higher pearson correlation to another feature it's
                    considered as redundant and ignored (float; default: 0.995)
         - verbose: verbosity level (int; default: 0)
+
     Returns:
         - list of column names representing 'ok' features (numeric, non-zero variance, not redundant)
     """
@@ -35,7 +37,7 @@ def _check_features(df: pd.DataFrame, corrthr: float = 0.995, verbose: int = 0) 
     correlated_cols = defaultdict(set)
     corrmat = pd.DataFrame(np.abs(np.corrcoef(df.values, rowvar=False)), columns=df.columns, index=df.columns)
     np.fill_diagonal(corrmat.values, 0)
-    for c, v in corrmat.unstack().sort_values(ascending=False).items():
+    for c, v in corrmat.unstack().sort_values(ascending=False).items():  # noqa PD010
         if v < corrthr:
             break
         if (c[0] != c[1]) and (c[0] not in useless_cols):
@@ -54,8 +56,12 @@ def _check_features(df: pd.DataFrame, corrthr: float = 0.995, verbose: int = 0) 
 
 
 def _compute_additional_features(
-    X: np.ndarray, feature_names: list | None = None, compute_ratio: bool = True, compute_product: bool = True, verbose: int = 0
-) -> tuple[np.ndarray, list]:
+    X: np.ndarray,
+    feature_names: list | None = None,
+    compute_ratio: bool = True,
+    compute_product: bool = True,
+    verbose: int = 0,
+) -> tuple[np.ndarray | None, list]:
     """
     Compute additional non-linear features from the original features (ratio or product of two features).
 
@@ -65,6 +71,7 @@ def _compute_additional_features(
         - compute_ratio: bool (default: True), whether to compute ratios of features
         - compute_product: bool (default: True), whether to compute products of features
         - verbose: verbosity level (int; default: 0)
+
     Returns:
         - np.array (n_datapoints x n_additional_features) with newly computed features
         - list with n_additional_features names describing the newly computed features
@@ -164,13 +171,14 @@ class AutoFeatLight(BaseEstimator):
         if self.verbose:
             print("[AutoFeatLight] Warning: This just calls fit_transform() but does not return the transformed dataframe.")
             print("[AutoFeatLight] It is much more efficient to call fit_transform() instead of fit() and transform()!")
-        _ = self.fit_transform(X)  # noqa
+        _ = self.fit_transform(X)
         return self
 
     def transform(self, X: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
         """
         Inputs:
             - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
+
         Returns:
             - new_X: new pandas dataframe or numpy array with additional/transformed features
         """
@@ -195,7 +203,11 @@ class AutoFeatLight(BaseEstimator):
         if self.compute_ratio or self.compute_product:
             # compute additional useful features
             X_new, new_features = _compute_additional_features(
-                df.to_numpy(), self.good_cols_org_, self.compute_ratio, self.compute_product, self.verbose
+                df.to_numpy(),
+                self.good_cols_org_,
+                self.compute_ratio,
+                self.compute_product,
+                self.verbose,
             )
             df = pd.concat([df, pd.DataFrame(X_new, columns=new_features)], axis=1)
             df = df[self.features_]
@@ -212,6 +224,7 @@ class AutoFeatLight(BaseEstimator):
         """
         Inputs:
             - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
+
         Returns:
             - new_X: new pandas dataframe or numpy array with additional/transformed features
         """
@@ -238,7 +251,11 @@ class AutoFeatLight(BaseEstimator):
         df = df[self.good_cols_org_]
         if self.compute_ratio or self.compute_product:
             X_new, new_features = _compute_additional_features(
-                df.to_numpy(), self.good_cols_org_, self.compute_ratio, self.compute_product, self.verbose
+                df.to_numpy(),
+                self.good_cols_org_,
+                self.compute_ratio,
+                self.compute_product,
+                self.verbose,
             )
             # add new features to original dataframe
             df = pd.concat([df, pd.DataFrame(X_new, columns=new_features, index=df_index)], axis=1)
