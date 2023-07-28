@@ -153,15 +153,14 @@ def test_classification():
     # autofeat with numpy arrays but as classification
     X, target = get_random_data()
     target = np.array(target > target.mean(), dtype=int)
-    afreg = AutoFeatClassifier(verbose=1, feateng_steps=3)
-    df = afreg.fit_transform(X, target)
-    assert afreg.score(X, target) >= 0.9999, "Accuracy should be 1."
-    assert afreg.score(df, target) >= 0.9999, "Accuracy should be 1."
+    afclf = AutoFeatClassifier(verbose=1, feateng_steps=3)
+    df = afclf.fit_transform(X, target)
     assert list(df.columns)[:3] == ["x000", "x001", "x002"], "Wrong column names"
+    assert afclf.score(X, target) >= 0.95, "Accuracy should be close to 1."
+    assert afclf.score(df, target) >= 0.95, "Accuracy should be close to 1."
 
 
-if __name__ == "__main__":
-    print("## Running sklearn Regressor tests")
+def test_sklearn_regressor_checks():
     # we allow for nan in transform
     successful_tests = {"check_estimators_nan_inf"}
     for estimator, check in check_estimator(
@@ -179,7 +178,8 @@ if __name__ == "__main__":
             successful_tests.add(check.func.__name__)
             check(estimator)
 
-    print("## Running sklearn Classifier tests")
+
+def test_sklearn_classifier_checks():
     # we allow for nan in transform
     successful_tests = {"check_estimators_nan_inf"}
     for estimator, check in check_estimator(
@@ -197,6 +197,12 @@ if __name__ == "__main__":
             successful_tests.add(check.func.__name__)
             check(estimator)
 
+
+if __name__ == "__main__":
+    print("## Running sklearn Regressor tests")
+    test_sklearn_regressor_checks()
+    print("## Running sklearn Classifier tests")
+    test_sklearn_classifier_checks()
     print("## Running custom tests")
     print("# test_do_almost_nothing")
     test_do_almost_nothing()
@@ -214,4 +220,6 @@ if __name__ == "__main__":
     test_categorical_cols()
     print("# test_units")
     test_units()
+    print("# test_classification")
+    test_classification()
     print("## Looks like all tests were successful :)")

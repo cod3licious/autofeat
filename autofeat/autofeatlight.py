@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from collections import defaultdict
 
@@ -11,6 +12,8 @@ import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.preprocessing import PowerTransformer, StandardScaler
 from sklearn.utils.validation import check_array, check_is_fitted
+
+logging.basicConfig(format="%(asctime)s %(levelname)s: %(message)s", level=logging.INFO)
 
 
 def _check_features(df: pd.DataFrame, corrthr: float = 0.995, verbose: int = 0) -> list:
@@ -50,8 +53,8 @@ def _check_features(df: pd.DataFrame, corrthr: float = 0.995, verbose: int = 0) 
             useless_cols.update(correlated_cols[c])
     # return list of columns that should be kept
     if verbose:
-        print(f"[AutoFeatLight] {len(useless_cols)} columns identified as useless:")
-        print(sorted(useless_cols))
+        logging.info(f"[AutoFeatLight] {len(useless_cols)} columns identified as useless:")
+        logging.info(sorted(useless_cols))
     return [c for c in df.columns if c not in useless_cols]
 
 
@@ -84,13 +87,13 @@ def _compute_additional_features(
     if compute_product:
         n += (d * d - d) // 2
     if not n:
-        print("ERROR: call _compute_additional_features with compute_ratio and/or compute_product set to True")
+        logging.error("[AutoFeatLight] call _compute_additional_features with compute_ratio and/or compute_product set to True")
         return None, []
     if not feature_names:
         feature_names = [f"x{i}" for i in range(1, d + 1)]
     # compute new features
     if verbose:
-        print(f"[AutoFeatLight] computing {n} additional features from {d} original features")
+        logging.info(f"[AutoFeatLight] computing {n} additional features from {d} original features")
     new_features = []
     X_new = np.zeros((X.shape[0], n))
     new_i = 0
@@ -169,8 +172,8 @@ class AutoFeatLight(BaseEstimator):
             - X: pandas dataframe or numpy array with original features (n_datapoints x n_features)
         """
         if self.verbose:
-            print("[AutoFeatLight] Warning: This just calls fit_transform() but does not return the transformed dataframe.")
-            print("[AutoFeatLight] It is much more efficient to call fit_transform() instead of fit() and transform()!")
+            logging.warning("[AutoFeatLight] This just calls fit_transform() but does not return the transformed dataframe.")
+            logging.info("[AutoFeatLight] It is much more efficient to call fit_transform() instead of fit() and transform()!")
         _ = self.fit_transform(X)
         return self
 
@@ -185,7 +188,7 @@ class AutoFeatLight(BaseEstimator):
         check_is_fitted(self, ["good_cols_org_"])
         if not self.good_cols_org_:
             if self.verbose > 0:
-                print("[AutoFeatLight] WARNING: No good features found; returning data unchanged.")
+                logging.warning("[AutoFeatLight] No good features found; returning data unchanged.")
             return X
         if isinstance(X, pd.DataFrame):
             # make sure all data is numeric or we'll get an error when checking X
@@ -245,7 +248,7 @@ class AutoFeatLight(BaseEstimator):
         self.good_cols_org_ = _check_features(df, self.corrthr_init, self.verbose)
         if not self.good_cols_org_:
             if self.verbose > 0:
-                print("[AutoFeatLight] WARNING: No good features found; returning original features.")
+                logging.warning("[AutoFeatLight] No good features found; returning original features.")
             return df if self.return_df_ else X
         # compute additional features
         df = df[self.good_cols_org_]
@@ -273,7 +276,7 @@ class AutoFeatLight(BaseEstimator):
                 X_new = self.power_transformer_.fit_transform(X_new)
             df = pd.DataFrame(X_new, columns=df.columns, index=df.index)
         if self.verbose > 0:
-            print(f"[AutoFeatLight] New data shape: {df.shape[0]} x {df.shape[1]}")
+            logging.info(f"[AutoFeatLight] New data shape: {df.shape[0]} x {df.shape[1]}")
         self.n_features_in_ = len(self.original_columns_)
         # return either dataframe or array
         return df if self.return_df_ else df.to_numpy()

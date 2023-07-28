@@ -33,7 +33,7 @@ def test_regular_df_X_y():
     fsel = FeatureSelector(verbose=0)
     new_X = fsel.fit_transform(pd.DataFrame(X), pd.DataFrame(target))
     assert isinstance(new_X, pd.DataFrame)
-    assert set(new_X.columns) == {0, 5, 6}, "Wrong features selected (%r)" % new_X.columns
+    assert set(new_X.columns) == {0, 5, 6}, f"Wrong features selected ({new_X.columns})"
 
 
 def test_df_X_y():
@@ -42,7 +42,7 @@ def test_df_X_y():
     fsel = FeatureSelector(verbose=0)
     new_X = fsel.fit_transform(pd.DataFrame(X, columns=[1, 2, "3", "x4", "x5", "eng6", "eng7"]), target)
     assert isinstance(new_X, pd.DataFrame)
-    assert set(new_X.columns) == {"1", "eng6", "eng7"}, "Wrong features selected (%r)" % new_X.columns
+    assert set(new_X.columns) == {"1", "eng6", "eng7"}, f"Wrong features selected ({new_X.columns})"
 
 
 def test_keep():
@@ -51,7 +51,7 @@ def test_keep():
     fsel = FeatureSelector(verbose=0, keep=[2, "x5"])
     new_X = fsel.fit_transform(pd.DataFrame(X, columns=[1, 2, "3", "x4", "x5", "eng6", "eng7"]), target)
     assert isinstance(new_X, pd.DataFrame)
-    assert set(new_X.columns) == {"1", "eng6", "eng7", "2", "x5"}, "Wrong features selected (%r)" % new_X.columns
+    assert set(new_X.columns) == {"1", "eng6", "eng7", "2", "x5"}, f"Wrong features selected ({new_X.columns})"
 
 
 def test_nans():
@@ -70,11 +70,10 @@ def test_nans():
     df = fsel.transform(pd.DataFrame(X))
     assert pd.isna(df[0].iloc[998]), "The first feature should be NaN"
     assert np.sum(pd.isna(df).to_numpy(dtype=int)) == 1, "only 1 place should be NaN"
-    assert set(df.columns) == {0, 5, 6}, "Wrong features selected (%r)" % df.columns
+    assert set(df.columns) == {0, 5, 6}, f"Wrong features selected ({df.columns})"
 
 
-if __name__ == "__main__":
-    print("## Running sklearn tests")
+def test_sklearn_checks():
     # we allow for nan in transform
     successful_tests = {"check_estimators_nan_inf"}
     for estimator, check in check_estimator(FeatureSelector(featsel_runs=1), generate_only=True):
@@ -89,6 +88,10 @@ if __name__ == "__main__":
             successful_tests.add(check.func.__name__)
             check(estimator)
 
+
+if __name__ == "__main__":
+    print("## Running sklearn tests")
+    test_sklearn_checks()
     print("## Running custom tests")
     test_regular_X_y()
     test_regular_df_X_y()

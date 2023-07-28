@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import operator as op
 import re
 from functools import reduce
@@ -16,6 +17,8 @@ import pint
 import sympy
 from sklearn.preprocessing import StandardScaler
 from sympy.utilities.lambdify import lambdify
+
+logging.basicConfig(format="%(asctime)s %(levelname)s: %(message)s", level=logging.INFO)
 
 
 def colnames2symbols(c: str | int, i: int = 0) -> str:
@@ -136,7 +139,7 @@ def engineer_features(
     feature_pool = {c: sympy.symbols(colnames2symbols(c, i), real=True) for i, c in enumerate(start_features)}  # type: ignore
     if max_steps < 1:
         if verbose > 0:
-            print("[feateng] Warning: no features generated for max_steps < 1.")
+            logging.warning("[feateng] no features generated for max_steps < 1.")
         return df_org, feature_pool
     # get a copy of the dataframe - this is where all the features will be added
     df = pd.DataFrame(df_org.copy(), dtype=np.float32)
@@ -262,7 +265,7 @@ def engineer_features(
                                 if corr < 0.95:
                                     uncorr_features.add(expr_name)
         if verbose > 0:
-            print(
+            logging.info(
                 f"[feateng] Generated {len(new_features)} transformed features from {len(features_list)} original features - done.",
             )
         df = df.join(pd.DataFrame(feat_array[:, : len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
@@ -329,7 +332,7 @@ def engineer_features(
                             if corr < 0.95:
                                 uncorr_features.add(expr_name)
         if verbose > 0:
-            print(
+            logging.info(
                 f"[feateng] Generated {len(new_features)} feature combinations from {len(feature_tuples)} original feature tuples - done.",
             )
         df = df.join(pd.DataFrame(feat_array[:, : len(new_features)], columns=new_features, index=df.index, dtype=np.float32))
@@ -338,7 +341,7 @@ def engineer_features(
     # get transformations of initial features
     steps = 1
     if verbose > 0:
-        print("[feateng] Step 1: transformation of original features")
+        logging.info("[feateng] Step 1: transformation of original features")
     original_features = list(feature_pool.keys())
     uncorr_features = set(feature_pool.keys())
     temp_new, temp_uncorr = apply_transformations(original_features)
@@ -348,14 +351,14 @@ def engineer_features(
     # get combinations of first feature set
     if steps <= max_steps:
         if verbose > 0:
-            print("[feateng] Step 2: first combination of features")
+            logging.info("[feateng] Step 2: first combination of features")
         new_features, temp_uncorr = get_feature_combinations(list(combinations(original_features, 2)))
         uncorr_features.update(temp_uncorr)
         steps += 1
     while steps <= max_steps:
         # apply transformations on these new features
         if verbose > 0:
-            print(f"[feateng] Step {steps}: transformation of new features")
+            logging.info(f"[feateng] Step {steps}: transformation of new features")
         temp_new, temp_uncorr = apply_transformations(new_features)
         new_features.extend(temp_new)
         uncorr_features.update(temp_uncorr)
@@ -363,14 +366,14 @@ def engineer_features(
         # get combinations of old and new features
         if steps <= max_steps:
             if verbose > 0:
-                print(f"[feateng] Step {steps}: combining old and new features")
+                logging.info(f"[feateng] Step {steps}: combining old and new features")
             new_new_features, temp_uncorr = get_feature_combinations(list(product(original_features, new_features)))
             uncorr_features.update(temp_uncorr)
             steps += 1
         # and combinations of new features within themselves
         if steps <= max_steps:
             if verbose > 0:
-                print(f"[feateng] Step {steps}: combining new features")
+                logging.info(f"[feateng] Step {steps}: combining new features")
             temp_new, temp_uncorr = get_feature_combinations(list(combinations(new_features, 2)))
             new_new_features.extend(temp_new)
             uncorr_features.update(temp_uncorr)
@@ -381,8 +384,8 @@ def engineer_features(
 
     # sort out all features that are just additions on the highest level or correlated with more basic features
     if verbose > 0:
-        print(f"[feateng] Generated altogether {len(feature_pool) - len(start_features)} new features in {max_steps} steps")  # type: ignore
-        print("[feateng] Removing correlated features, as well as additions at the highest level")
+        logging.info(f"[feateng] Generated altogether {len(feature_pool) - len(start_features)} new features in {max_steps} steps")  # type: ignore
+        logging.info("[feateng] Removing correlated features, as well as additions at the highest level")
     feature_pool = {
         c: feature_pool[c] for c in feature_pool if c in uncorr_features and feature_pool[c].func != sympy.core.add.Add
     }
@@ -406,5 +409,5 @@ def engineer_features(
         cols = [c for c in cols if corrs[c] < 0.9]
     cols = list(df_org.columns) + cols
     if verbose > 0:
-        print(f"[feateng] Generated a total of {len(feature_pool) - len(start_features)} additional features")  # type: ignore
+        logging.info(f"[feateng] Generated a total of {len(feature_pool) - len(start_features)} additional features")  # type: ignore
     return df[cols], feature_pool

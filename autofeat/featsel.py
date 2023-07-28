@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import warnings
 from collections import Counter
 
@@ -13,7 +14,9 @@ from joblib import Parallel, delayed
 from sklearn.base import BaseEstimator
 from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 
-from .nb_utils import nb_standard_scale
+from autofeat.nb_utils import nb_standard_scale
+
+logging.basicConfig(format="%(asctime)s %(levelname)s: %(message)s", level=logging.INFO)
 
 
 def _add_noise_features(X: np.ndarray):
@@ -64,7 +67,7 @@ def _noise_filtering(
     elif problem_type == "classification":
         model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced")
     else:
-        print(f"[featsel] WARNING: Unknown problem_type {problem_type} - not performing noise filtering.")
+        logging.warning(f"[featsel] Unknown problem_type {problem_type} - not performing noise filtering.")
         model = None
     if model is not None:
         X = _add_noise_features(X)
@@ -108,7 +111,7 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
     elif problem_type == "classification":
         model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced")
     else:
-        print(f"[featsel] WARNING: Unknown problem_type {problem_type} - not performing feature selection!")
+        logging.warning(f"[featsel] Unknown problem_type {problem_type} - not performing feature selection!")
         return []
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -129,7 +132,7 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
     initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, problem_type)
     good_cols_set = set(initial_cols)
     if verbose > 0:
-        print(f"[featsel]\t {len(initial_cols)} initial features.")
+        logging.info(f"[featsel]\t {len(initial_cols)} initial features.")
     # add noise features
     X_w_noise = _add_noise_features(df[initial_cols].to_numpy())
     # go through all remaining features in splits of n_feat <= 0.5*n_train
@@ -169,7 +172,7 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
     good_cols = list(good_cols_set)
     good_cols = _noise_filtering(df[good_cols].to_numpy(), target, good_cols, problem_type)
     if verbose > 0:
-        print(f"\n[featsel]\t Selected {len(good_cols):3} features after noise filtering.")
+        logging.info(f"\n[featsel]\t Selected {len(good_cols):3} features after noise filtering.")
     return good_cols
 
 
@@ -207,7 +210,7 @@ def select_features(
     # scale features to have 0 mean and unit std
     if verbose > 0:
         if featsel_runs > df.shape[0]:
-            print("[featsel] WARNING: Less data points than featsel runs!!")
+            logging.warning("[featsel] Less data points than featsel runs!!")
         print("[featsel] Scaling data...", end="")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -222,7 +225,7 @@ def select_features(
     # by doing sort of a cross-validation (i.e., randomly subsample data points)
     def run_select_features(i: int):
         if verbose > 0:
-            print(f"[featsel] Feature selection run {i + 1}/{featsel_runs}")
+            logging.info(f"[featsel] Feature selection run {i + 1}/{featsel_runs}")
         np.random.seed(i)
         rand_idx = np.random.permutation(df_scaled.index)[: max(10, int(0.85 * len(df_scaled)))]
         return _select_features_1run(df_scaled.iloc[rand_idx], target_scaled[rand_idx], problem_type, verbose=verbose - 1)
@@ -251,7 +254,7 @@ def select_features(
                 reverse=True,
             )
             if verbose > 0:
-                print(f"[featsel] {len(selected_columns)} features after {featsel_runs} feature selection runs")
+                logging.info(f"[featsel] {len(selected_columns)} features after {featsel_runs} feature selection runs")
             # correlation filtering
             selected_columns = keep + [c for c in selected_columns if c not in keep]
             if not keep:
@@ -267,19 +270,19 @@ def select_features(
                     if np.max(np.abs(correlations[c].ravel()[:i])) < 0.9:
                         good_cols.append(c)
             if verbose > 0:
-                print(f"[featsel] {len(good_cols)} features after correlation filtering")
+                logging.info(f"[featsel] {len(good_cols)} features after correlation filtering")
 
     # perform noise filtering on these features
     good_cols = _noise_filtering(df_scaled[good_cols].to_numpy(), target_scaled, good_cols, problem_type)
     if verbose > 0:
-        print(f"[featsel] {len(good_cols)} features after noise filtering")
+        logging.info(f"[featsel] {len(good_cols)} features after noise filtering")
         if not good_cols:
-            print("[featsel] WARNING: Not a single good features was found...")
+            logging.warning("[featsel] Not a single good features was found...")
 
     # add keep columns back in
     good_cols = keep + [c for c in good_cols if c not in keep]
     if verbose > 0 and keep:
-        print(f"[featsel] {len(good_cols)} final features selected (including {len(keep)} original keep features).")
+        logging.info(f"[featsel] {len(good_cols)} final features selected (including {len(keep)} original keep features).")
     return good_cols
 
 
@@ -358,7 +361,7 @@ class FeatureSelector(BaseEstimator):
         check_is_fitted(self, ["good_cols_"])
         if not self.good_cols_:
             if self.verbose > 0:
-                print("[FeatureSelector] WARNING: No good features found; returning data unchanged.")
+                logging.warning("[FeatureSelector] No good features found; returning data unchanged.")
             return X
         # store column names as they'll be lost in the other check
         # first calling np.array assures that all the column names have the same dtype
