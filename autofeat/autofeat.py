@@ -314,7 +314,7 @@ class AutoFeatModel(BaseEstimator):
         # convert units to proper pint units
         if self.units:
             # need units for only and all feateng columns
-            self.units = {c: self.units[c] if c in self.units else "" for c in self.feateng_cols_}
+            self.units = {c: self.units.get(c, "") for c in self.feateng_cols_}
             # apply pi-theorem -- additional columns are not used for regular feature engineering (for now)!
             df = self._apply_pi_theorem(df)
         # subsample data points and targets in case we'll generate too many features
