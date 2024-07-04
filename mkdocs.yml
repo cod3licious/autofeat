@@ -1,4 +1,15 @@
 site_name: autofeat docs
 site_url: https://franziskahorn.de/autofeat
+repo_url: https://github.com/cod3licious/autofeat
+repo_name: autofeat@GitHub
 theme:
   name: material
+  palette:
+    primary: teal
+  icon:
+    repo: fontawesome/brands/github
+    logo: fontawesome/solid/shield-cat
+nav:
+  - Getting Started: index.md
+  - The Science: science.md
+  - Changelog: CHANGELOG.md

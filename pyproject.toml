@@ -1,0 +1,140 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "autofeat"
+version = "2.1.3"
+description = "Automatic Feature Engineering and Selection Linear Prediction Model"
+authors = ["Franziska Horn <cod3licious@gmail.com>"]
+readme = "README.md"
+packages = [{include = "autofeat", from = "src"}]
+license = "MIT"
+keywords = ["automl", "feature engineering", "feature selection", "linear model"]
+repository = "https://github.com/cod3licious/autofeat"
+homepage = "https://franziskahorn.de/autofeat"
+
+[tool.poetry.dependencies]
+python = "^3.8.1,<3.13"
+numpy = "^1.20.3"
+numba = ">=0.53.1"
+joblib = "^1.2.0"
+pandas = ">=1.3.5,<3.0.0"
+pint = ">=0.17,<1.0"
+scipy = "^1.7.3"
+scikit-learn = "^1.2.0"
+sympy = "^1.7.1"
+
+[tool.poetry.group.dev.dependencies]
+bandit = "^1.7.7"
+ipython = ">=8.0.0"
+notebook = "^6.5.0"
+matplotlib = "^3.7.2"
+mkdocs-material = "^9.5.28"
+mypy = "^1.7.1"
+poethepoet = ">=0.24.4"
+pytest = "^7.4.0"
+pyupgrade = "^3.9.0"
+ruff = ">=0.2.1"
+
+
+[tool.poe.tasks]
+# run with `poetry run poe format`
+format = "bash -c 'pyupgrade --py38-plus $(find **/*.py) && ruff check --fix . && ruff format .'"
+check = "bash -c 'ruff check . && mypy src/autofeat && bandit -c pyproject.toml -r .'"
+test = "bash -c 'pytest tests'"
+
+
+[tool.ruff]
+target-version = "py38"
+line-length = 128
+
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".eggs",
+    ".git",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".venv",
+    "__pypackages__",
+    "__pycache__",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = ["A", "B", "C4", "D", "E", "F", "G", "I", "N", "Q", "W", "COM", "DTZ", "FA", "ICN", "INP", "PIE", "PD", "PL", "RSE", "RET", "RUF", "SIM", "SLF", "UP"]
+
+# Allow autofix for all enabled rules (when `--fix`) is provided.
+fixable = ["C4", "D", "E", "G", "I", "Q", "W", "COM", "PD", "RSE", "RET", "RUF", "SIM", "SLF", "UP"]
+# Avoid trying to fix flake8-bugbear (`B`) violations.
+unfixable = ["B", "F841"]
+
+# Ignore a few rules that we consider too strict.
+ignore = ["E501", # Line too long
+    "E741", # Ambiguous variable name: `l`
+    "PD901", # 'df' is a bad variable name
+    "N999", # Invalid module name: '🏠_Home'
+    "N802", "N803", "N806", # names should be lowercase
+    "D1",  # D100 - D107: Missing docstrings
+    "D212", # Multi-line docstring summary should start at the second line
+    "D400", # adds a period at the end of line (problematic when it is a path)
+    "D415", # First line should end with a period, question mark, or exclamation point
+    "D203", "D204", "D205", # required blank lines
+    "G004", # Logging statement uses f-string
+    "PIE790", # Unnecessary `pass` statement
+    "PLR2004", # Magic value used in comparison, consider replacing 0.999 with a constant variable
+    "PLR09", # Too many arguments to function call
+    "COM812", # trailing comma - don't use together with formatter
+]
+
+# Ignore `E402` (import violations) in all `__init__.py` files, and in `path/to/file.py`.
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["autofeat", "autofeat.*"]
+section-order = ["future", "standard-library", "third-party", "first-party", "tests", "local-folder"]
+
+[tool.ruff.lint.isort.sections]
+"tests" = ["tests"]
+
+[tool.ruff.lint.flake8-import-conventions]
+
+[tool.mypy]
+plugins = ["numpy.typing.mypy_plugin"]
+
+[[tool.mypy.overrides]]
+module = [
+    "pandas.*",
+    "sklearn.*",
+    "joblib.*",
+    "scipy.*",
+    "numpy",
+    "numba",
+    "pandas.*",
+    "streamlit.*",
+    "matplotlib.*",
+    "IPython.*",
+    "plotly.*",
+    "seaborn.*",
+    "requests.*",
+    "sqlalchemy.*"
+]
+ignore_missing_imports = true
+
+[tool.bandit]
+targets = ["src/autofeat/"]
+recursive = true
+skips = ["B101"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "--disable-warnings"
+markers = ["slow"]
