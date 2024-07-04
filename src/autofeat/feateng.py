@@ -130,13 +130,13 @@ def engineer_features(
         - feature_pool: dict with {col: sympy formula} formulas to generate each feature
     """
     # initialize the feature pool with columns from the dataframe
-    if not start_features:
-        start_features = df_org.columns
+    if start_features is None:
+        start_features = list(df_org.columns)
     else:
         for c in start_features:
             if c not in df_org.columns:
                 raise ValueError(f"[feateng] start feature {c} not in df_org.columns")
-    feature_pool = {c: sympy.symbols(colnames2symbols(c, i), real=True) for i, c in enumerate(start_features)}  # type: ignore
+    feature_pool = {c: sympy.symbols(colnames2symbols(c, i), real=True) for i, c in enumerate(start_features)}
     if max_steps < 1:
         if verbose > 0:
             logging.warning("[feateng] no features generated for max_steps < 1.")
@@ -384,7 +384,9 @@ def engineer_features(
 
     # sort out all features that are just additions on the highest level or correlated with more basic features
     if verbose > 0:
-        logging.info(f"[feateng] Generated altogether {len(feature_pool) - len(start_features)} new features in {max_steps} steps")  # type: ignore
+        logging.info(
+            f"[feateng] Generated altogether {len(feature_pool) - len(start_features)} new features in {max_steps} steps"
+        )
         logging.info("[feateng] Removing correlated features, as well as additions at the highest level")
     feature_pool = {
         c: feature_pool[c] for c in feature_pool if c in uncorr_features and feature_pool[c].func != sympy.core.add.Add
@@ -409,5 +411,5 @@ def engineer_features(
         cols = [c for c in cols if corrs[c] < 0.9]
     cols = list(df_org.columns) + cols
     if verbose > 0:
-        logging.info(f"[feateng] Generated a total of {len(feature_pool) - len(start_features)} additional features")  # type: ignore
+        logging.info(f"[feateng] Generated a total of {len(feature_pool) - len(start_features)} additional features")
     return df[cols], feature_pool
