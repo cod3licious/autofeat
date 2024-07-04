@@ -1,0 +1,4 @@
+site_name: autofeat docs
+site_url: https://franziskahorn.de/autofeat
+theme:
+  name: material
