@@ -17,6 +17,7 @@ dist/
 build/
 *.egg-info/
 MANIFEST.in
-pyproject.toml
 pyrightconfig.json
 poetry.lock
+notebooks/profile_autofeat.py
+notebooks/newtons_law_of_cooling.ipynb
