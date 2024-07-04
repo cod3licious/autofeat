@@ -2,7 +2,7 @@
 
 This library contains `sklearn`-compatible linear prediction models with automated feature engineering and selection capabilities.
 
-For more information please have a look at the [documentation]https://franziskahorn.de/autofeat.
+For more information please have a look at the [documentation](https://franziskahorn.de/autofeat).
 
 The code is intended for research purposes.
 
