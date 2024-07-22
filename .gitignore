@@ -21,4 +21,4 @@ pyrightconfig.json
 poetry.lock
 notebooks/profile_autofeat.py
 notebooks/newtons_law_of_cooling.ipynb
-src/autofeat/autofeat_reproducibility/*
+notebooks/autofeat_reproducibility/*
