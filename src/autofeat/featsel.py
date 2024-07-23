@@ -133,7 +133,7 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
     # weight threshold: select at most 0.2*n_train initial features
     thr = sorted(coefs, reverse=True)[min(df.shape[1] - 1, df.shape[0] // 5)]
     initial_cols = list(df.columns[coefs > thr])
-    #print('initial_cols before noise:', initial_cols)  ## Is ok, always the same
+    print('initial_cols before noise:', initial_cols)  ## Is ok, always the same
 
     # noise filter
     initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, problem_type)
@@ -141,11 +141,11 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
     if verbose > 0:
         logging.info(f"[featsel]\t {len(initial_cols)} initial features.")
 
-    #print('initial_cols after noise:', initial_cols)  ## Is ok, always the same
+    print('initial_cols after noise:', initial_cols)  ## Is ok, always the same
     # add noise features
     X_w_noise = _add_noise_features(df[initial_cols].to_numpy())
 
-    #print('X_w_noise:', X_w_noise) - it is always the same
+    print('X_w_noise:', X_w_noise[:5, :5])  
     # go through all remaining features in splits of n_feat <= 0.5*n_train
     np.random.seed(42)
     #other_cols = list(np.random.permutation(list(set(df.columns).difference(initial_cols))))
@@ -256,13 +256,19 @@ def select_features(
             for i in range(featsel_runs):
                 selected_columns.extend(run_select_features(i))
         else:
-
+            np.random.seed(i)
             def flatten_lists(l: list):
                 return [item for sublist in l for item in sublist]
+            
+            # Generate a list of seeds, one for each run
+            seeds = np.random.randint(0, 100000, size=featsel_runs)
 
             selected_columns = flatten_lists(
-                Parallel(n_jobs=n_jobs, verbose=100 * verbose)(delayed(run_select_features)(i) for i in range(featsel_runs)),
-            )
+                Parallel(n_jobs=n_jobs, verbose=100 * verbose)(
+                    delayed(run_select_features)(i, seeds[i]) for i in range(featsel_runs)))
+            
+            print('featsel_runs:', featsel_runs)
+            print('selected_columns:', selected_columns)
 
         if selected_columns:
             selected_columns_counter = Counter(selected_columns)
