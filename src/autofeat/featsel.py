@@ -133,15 +133,23 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
     # weight threshold: select at most 0.2*n_train initial features
     thr = sorted(coefs, reverse=True)[min(df.shape[1] - 1, df.shape[0] // 5)]
     initial_cols = list(df.columns[coefs > thr])
+    #print('initial_cols before noise:', initial_cols)  ## Is ok, always the same
+
     # noise filter
     initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, problem_type)
     good_cols_set = set(initial_cols)
     if verbose > 0:
         logging.info(f"[featsel]\t {len(initial_cols)} initial features.")
+
+    #print('initial_cols after noise:', initial_cols)  ## Is ok, always the same
     # add noise features
     X_w_noise = _add_noise_features(df[initial_cols].to_numpy())
+
+    #print('X_w_noise:', X_w_noise) - it is always the same
     # go through all remaining features in splits of n_feat <= 0.5*n_train
-    other_cols = list(np.random.permutation(list(set(df.columns).difference(initial_cols))))
+    np.random.seed(42)
+    #other_cols = list(np.random.permutation(list(set(df.columns).difference(initial_cols))))
+    other_cols = list(np.random.permutation(sorted(set(df.columns).difference(initial_cols))))
     if other_cols:
         n_splits = int(np.ceil(len(other_cols) / max(10, 0.5 * df.shape[0] - len(initial_cols))))
         split_size = int(np.ceil(len(other_cols) / n_splits))
@@ -175,6 +183,7 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
                 )
     # noise filtering on the combination of features
     good_cols = list(good_cols_set)
+    print('good_cols:', good_cols)
     good_cols = _noise_filtering(df[good_cols].to_numpy(), target, good_cols, problem_type)
     if verbose > 0:
         logging.info(f"\n[featsel]\t Selected {len(good_cols):3} features after noise filtering.")
