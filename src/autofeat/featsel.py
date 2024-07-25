@@ -272,10 +272,10 @@ def select_features(
 
         if selected_columns:
             selected_columns_counter = Counter(selected_columns)
-            # sort by frequency, but down weight longer formulas to break ties
+            # sort by frequency, but down weight longer formulas to break ties. Also added some randomness to fix reproducibility when equal freq and length
             selected_columns = sorted(
                 selected_columns_counter,
-                key=lambda x: selected_columns_counter[x] - 0.000001 * len(str(x)),
+                key=lambda x: selected_columns_counter[x] - 0.000001 * len(str(x)) + np.random.random() * 0.000001,
                 reverse=True,
             )
             if verbose > 0:
