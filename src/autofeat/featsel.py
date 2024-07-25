@@ -43,6 +43,7 @@ def _noise_filtering(
     target: np.ndarray,
     good_cols: list | None = None,
     problem_type: str = "regression",
+    random_seed: int = None
 ) -> list:
     """
     Trains a prediction model with additional noise features and selects only those of the
@@ -65,11 +66,12 @@ def _noise_filtering(
     if problem_type == "regression":
         model = lm.LassoLarsCV(cv=5, eps=1e-8)
     elif problem_type == "classification":
-        model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced")
+        model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced",random_state=random_seed)
     else:
         logging.warning(f"[featsel] Unknown problem_type {problem_type} - not performing noise filtering.")
         model = None
     if model is not None:
+        np.random.seed(random_seed)  # Set seed for noise feature addition and permutation
         X = _add_noise_features(X)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
