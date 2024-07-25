@@ -147,7 +147,7 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
 
     print('X_w_noise:', X_w_noise[:5, :5])  
     # go through all remaining features in splits of n_feat <= 0.5*n_train
-    np.random.seed(42)
+    np.random.seed(random_seed)
     #other_cols = list(np.random.permutation(list(set(df.columns).difference(initial_cols))))
     other_cols = list(np.random.permutation(sorted(set(df.columns).difference(initial_cols))))
     if other_cols:
