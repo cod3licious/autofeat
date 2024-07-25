@@ -135,19 +135,16 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
     # weight threshold: select at most 0.2*n_train initial features
     thr = sorted(coefs, reverse=True)[min(df.shape[1] - 1, df.shape[0] // 5)]
     initial_cols = list(df.columns[coefs > thr])
-    print('initial_cols before noise:', initial_cols)  ## Is ok, always the same
 
     # noise filter
-    initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, problem_type)
+    initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, random_seed=random_seed)
     good_cols_set = set(initial_cols)
     if verbose > 0:
         logging.info(f"[featsel]\t {len(initial_cols)} initial features.")
 
-    print('initial_cols after noise:', initial_cols)  ## Is ok, always the same
     # add noise features
     X_w_noise = _add_noise_features(df[initial_cols].to_numpy())
 
-    print('X_w_noise:', X_w_noise[:5, :5])  
     # go through all remaining features in splits of n_feat <= 0.5*n_train
     np.random.seed(random_seed)
     #other_cols = list(np.random.permutation(list(set(df.columns).difference(initial_cols))))
@@ -175,9 +172,11 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
             # for classification, model.coefs_ is n_classes x n_features, but we need n_features
             coefs = np.abs(model.coef_) if problem_type == "regression" else np.max(np.abs(model.coef_), axis=0)
             weights = dict(zip(current_cols, coefs[: len(current_cols)]))
+
             # only include features that are more important than our known noise features
             noise_w_thr = np.max(coefs[len(current_cols) :])
             good_cols_set.update([c for c in weights if abs(weights[c]) > noise_w_thr])
+
             if verbose > 0:
                 print(
                     f"[featsel]\t Split {i + 1:2}/{n_splits}: {len(good_cols_set):3} candidate features identified.",
@@ -185,7 +184,6 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
                 )
     # noise filtering on the combination of features
     good_cols = list(good_cols_set)
-    print('good_cols:', good_cols)
     good_cols = _noise_filtering(df[good_cols].to_numpy(), target, good_cols, problem_type)
     if verbose > 0:
         logging.info(f"\n[featsel]\t Selected {len(good_cols):3} features after noise filtering.")
@@ -256,7 +254,8 @@ def select_features(
             # only use parallelization code if you actually parallelize
             selected_columns = []
             for i in range(featsel_runs):
-                selected_columns.extend(run_select_features(i))
+                selected_columns.extend(run_select_features(i, random_seed))
+
         else:
             # Generate a list of seeds, one for each run
             seeds = np.random.randint(0, 100000, size=featsel_runs)
@@ -268,9 +267,6 @@ def select_features(
                 Parallel(n_jobs=n_jobs, verbose=100 * verbose)(
                     delayed(run_select_features)(i, seeds[i]) for i in range(featsel_runs)))
             
-            print('featsel_runs:', featsel_runs)
-            print('selected_columns:', selected_columns)
-
         if selected_columns:
             selected_columns_counter = Counter(selected_columns)
             # sort by frequency, but down weight longer formulas to break ties. Also added some randomness to fix reproducibility when equal freq and length
@@ -279,6 +275,7 @@ def select_features(
                 key=lambda x: selected_columns_counter[x] - 0.000001 * len(str(x)) + np.random.random() * 0.000001,
                 reverse=True,
             )
+
             if verbose > 0:
                 logging.info(f"[featsel] {len(selected_columns)} features after {featsel_runs} feature selection runs")
             # correlation filtering
@@ -376,7 +373,6 @@ class FeatureSelector(BaseEstimator):
             self.verbose,
             self.random_seed
         )
-        print('Fit self.good_cols_', self.good_cols_)
         self.n_features_in_ = X.shape[1]
         return self
 
