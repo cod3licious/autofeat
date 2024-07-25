@@ -242,12 +242,12 @@ def select_features(
 
     # select good features in k runs in parallel
     # by doing sort of a cross-validation (i.e., randomly subsample data points)
-    def run_select_features(i: int):
+    def run_select_features(i: int, seed:int):
         if verbose > 0:
             logging.info(f"[featsel] Feature selection run {i + 1}/{featsel_runs}")
-        np.random.seed(i)
+        np.random.seed(seed)
         rand_idx = np.random.permutation(df_scaled.index)[: max(10, int(0.85 * len(df_scaled)))]
-        return _select_features_1run(df_scaled.iloc[rand_idx], target_scaled[rand_idx], problem_type, verbose=verbose - 1, random_seed=random_seed)
+        return _select_features_1run(df_scaled.iloc[rand_idx], target_scaled[rand_idx], problem_type, verbose=verbose - 1, random_seed=seed)
 
     if featsel_runs >= 1 and problem_type in ("regression", "classification"):
         if n_jobs == 1 or featsel_runs == 1:
@@ -256,12 +256,11 @@ def select_features(
             for i in range(featsel_runs):
                 selected_columns.extend(run_select_features(i))
         else:
-            np.random.seed(i)
-            def flatten_lists(l: list):
-                return [item for sublist in l for item in sublist]
-            
             # Generate a list of seeds, one for each run
             seeds = np.random.randint(0, 100000, size=featsel_runs)
+
+            def flatten_lists(l: list):
+                return [item for sublist in l for item in sublist]
 
             selected_columns = flatten_lists(
                 Parallel(n_jobs=n_jobs, verbose=100 * verbose)(
