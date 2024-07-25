@@ -43,6 +43,7 @@ def _noise_filtering(
     target: np.ndarray,
     good_cols: list | None = None,
     problem_type: str = "regression",
+    random_seed: int = None
 ) -> list:
     """
     Trains a prediction model with additional noise features and selects only those of the
@@ -65,11 +66,12 @@ def _noise_filtering(
     if problem_type == "regression":
         model = lm.LassoLarsCV(cv=5, eps=1e-8)
     elif problem_type == "classification":
-        model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced")
+        model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced",random_state=random_seed)
     else:
         logging.warning(f"[featsel] Unknown problem_type {problem_type} - not performing noise filtering.")
         model = None
     if model is not None:
+        np.random.seed(random_seed)  # Set seed for noise feature addition and permutation
         X = _add_noise_features(X)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -89,7 +91,7 @@ def _noise_filtering(
     return good_cols
 
 
-def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: str = "regression", verbose: int = 0) -> list:
+def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: str = "regression", verbose: int = 0, random_seed: int = None) -> list:
     """
     One feature selection run.
 
@@ -105,6 +107,11 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
     """
     if df.shape[0] <= 1:
         raise ValueError(f"n_samples = {df.shape[0]}")
+    
+    # Set random seed
+    if random_seed is not None:
+        np.random.seed(random_seed)
+
     # initial selection of too few but (hopefully) relevant features
     if problem_type == "regression":
         model = lm.LassoLarsCV(cv=5, eps=1e-8)
@@ -128,15 +135,20 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
     # weight threshold: select at most 0.2*n_train initial features
     thr = sorted(coefs, reverse=True)[min(df.shape[1] - 1, df.shape[0] // 5)]
     initial_cols = list(df.columns[coefs > thr])
+
     # noise filter
-    initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, problem_type)
+    initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, random_seed=random_seed)
     good_cols_set = set(initial_cols)
     if verbose > 0:
         logging.info(f"[featsel]\t {len(initial_cols)} initial features.")
+
     # add noise features
     X_w_noise = _add_noise_features(df[initial_cols].to_numpy())
+
     # go through all remaining features in splits of n_feat <= 0.5*n_train
-    other_cols = list(np.random.permutation(list(set(df.columns).difference(initial_cols))))
+    np.random.seed(random_seed)
+    #other_cols = list(np.random.permutation(list(set(df.columns).difference(initial_cols))))
+    other_cols = list(np.random.permutation(sorted(set(df.columns).difference(initial_cols))))
     if other_cols:
         n_splits = int(np.ceil(len(other_cols) / max(10, 0.5 * df.shape[0] - len(initial_cols))))
         split_size = int(np.ceil(len(other_cols) / n_splits))
@@ -146,7 +158,7 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
             if problem_type == "regression":
                 model = lm.LassoLarsCV(cv=5, eps=1e-8)
             else:
-                model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced")
+                model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced",  random_state=random_seed)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 # TODO: remove if sklearn least_angle issue is fixed
@@ -160,9 +172,11 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
             # for classification, model.coefs_ is n_classes x n_features, but we need n_features
             coefs = np.abs(model.coef_) if problem_type == "regression" else np.max(np.abs(model.coef_), axis=0)
             weights = dict(zip(current_cols, coefs[: len(current_cols)]))
+
             # only include features that are more important than our known noise features
             noise_w_thr = np.max(coefs[len(current_cols) :])
             good_cols_set.update([c for c in weights if abs(weights[c]) > noise_w_thr])
+
             if verbose > 0:
                 print(
                     f"[featsel]\t Split {i + 1:2}/{n_splits}: {len(good_cols_set):3} candidate features identified.",
@@ -184,6 +198,7 @@ def select_features(
     problem_type: str = "regression",
     n_jobs: int = 1,
     verbose: int = 0,
+    random_seed: int = None,
 ) -> list:
     """
     Selects predictive features given the data and targets.
@@ -201,6 +216,10 @@ def select_features(
     Returns:
         - good_cols: list of column names for df with which a regression model can be trained
     """
+    # Set random seed
+    if random_seed is not None:
+        np.random.seed(random_seed)
+                       
     if not (len(df) == len(target)):
         raise ValueError("[featsel] df and target dimension mismatch.")
     if keep is None:
@@ -223,36 +242,40 @@ def select_features(
 
     # select good features in k runs in parallel
     # by doing sort of a cross-validation (i.e., randomly subsample data points)
-    def run_select_features(i: int):
+    def run_select_features(i: int, seed:int):
         if verbose > 0:
             logging.info(f"[featsel] Feature selection run {i + 1}/{featsel_runs}")
-        np.random.seed(i)
+        np.random.seed(seed)
         rand_idx = np.random.permutation(df_scaled.index)[: max(10, int(0.85 * len(df_scaled)))]
-        return _select_features_1run(df_scaled.iloc[rand_idx], target_scaled[rand_idx], problem_type, verbose=verbose - 1)
+        return _select_features_1run(df_scaled.iloc[rand_idx], target_scaled[rand_idx], problem_type, verbose=verbose - 1, random_seed=seed)
 
     if featsel_runs >= 1 and problem_type in ("regression", "classification"):
         if n_jobs == 1 or featsel_runs == 1:
             # only use parallelization code if you actually parallelize
             selected_columns = []
             for i in range(featsel_runs):
-                selected_columns.extend(run_select_features(i))
+                selected_columns.extend(run_select_features(i, random_seed))
+
         else:
+            # Generate a list of seeds, one for each run
+            seeds = np.random.randint(0, 100000, size=featsel_runs)
 
             def flatten_lists(l: list):
                 return [item for sublist in l for item in sublist]
 
             selected_columns = flatten_lists(
-                Parallel(n_jobs=n_jobs, verbose=100 * verbose)(delayed(run_select_features)(i) for i in range(featsel_runs)),
-            )
-
+                Parallel(n_jobs=n_jobs, verbose=100 * verbose)(
+                    delayed(run_select_features)(i, seeds[i]) for i in range(featsel_runs)))
+            
         if selected_columns:
             selected_columns_counter = Counter(selected_columns)
-            # sort by frequency, but down weight longer formulas to break ties
+            # sort by frequency, but down weight longer formulas to break ties. Also added some randomness to fix reproducibility when equal freq and length
             selected_columns = sorted(
                 selected_columns_counter,
-                key=lambda x: selected_columns_counter[x] - 0.000001 * len(str(x)),
+                key=lambda x: selected_columns_counter[x] - 0.000001 * len(str(x)) + np.random.random() * 0.000001,
                 reverse=True,
             )
+
             if verbose > 0:
                 logging.info(f"[featsel] {len(selected_columns)} features after {featsel_runs} feature selection runs")
             # correlation filtering
@@ -294,6 +317,7 @@ class FeatureSelector(BaseEstimator):
         keep: list | None = None,
         n_jobs: int = 1,
         verbose: int = 0,
+        random_seed: int = None
     ):
         """
         multi-step cross-validated feature selection
@@ -316,6 +340,7 @@ class FeatureSelector(BaseEstimator):
         self.keep = keep
         self.n_jobs = n_jobs
         self.verbose = verbose
+        self.random_seed = random_seed
 
     def fit(self, X: np.ndarray | pd.DataFrame, y: np.ndarray | pd.DataFrame):
         """
@@ -346,6 +371,7 @@ class FeatureSelector(BaseEstimator):
             self.problem_type,
             self.n_jobs,
             self.verbose,
+            self.random_seed
         )
         self.n_features_in_ = X.shape[1]
         return self
