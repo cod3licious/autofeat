@@ -265,7 +265,11 @@ def select_features(
 
         else:
             # Generate a list of seeds, one for each run
-            seeds = np.random.randint(0, 100000, size=featsel_runs)
+            def random_seed_generator(low=0, high=2**32 - 1):
+                while True:
+                    seed = np.random.randint(low, high)
+                    yield seed
+            seeds = random_seed_generator()
 
             def flatten_lists(l: list):
                 return [item for sublist in l for item in sublist]
