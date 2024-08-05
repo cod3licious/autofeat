@@ -243,10 +243,14 @@ def select_features(
 
     # select good features in k runs in parallel
     # by doing sort of a cross-validation (i.e., randomly subsample data points)
-    def run_select_features(i: int, seed: int):
+    def run_select_features(i: int, random_seed: int):
         if verbose > 0:
             logging.info(f"[featsel] Feature selection run {i + 1}/{featsel_runs}")
-        np.random.seed(seed)
+        np.random.seed(random_seed)
+        loop_seed = np.random.randint(
+            10**6
+        )  # Added to random_seed to make sure that the 1run seed is different for each run, but globally reproducible
+        seed = random_seed + loop_seed if random_seed is not None else loop_seed
         rand_idx = np.random.permutation(df_scaled.index)[: max(10, int(0.85 * len(df_scaled)))]
         return _select_features_1run(
             df_scaled.iloc[rand_idx], target_scaled[rand_idx], problem_type, verbose=verbose - 1, random_seed=seed
