@@ -146,7 +146,6 @@ def _select_features_1run(
     X_w_noise = _add_noise_features(df[initial_cols].to_numpy())
 
     # go through all remaining features in splits of n_feat <= 0.5*n_train
-    np.random.seed(random_seed)
     # other_cols = list(np.random.permutation(list(set(df.columns).difference(initial_cols))))
     other_cols = list(np.random.permutation(sorted(set(df.columns).difference(initial_cols))))
     if other_cols:
