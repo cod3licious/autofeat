@@ -141,7 +141,7 @@ def _select_features_1run(
     initial_cols = list(df.columns[coefs > thr])
 
     # noise filter
-    initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, random_seed=random_seed)
+    initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, problem_type, random_seed=random_seed)
     good_cols_set = set(initial_cols)
     if verbose > 0:
         logging.info(f"[featsel]\t {len(initial_cols)} initial features.")
@@ -290,7 +290,7 @@ def select_features(
             # sort by frequency, but down weight longer formulas to break ties. Also added some randomness to fix reproducibility when equal freq and length
             selected_columns = sorted(
                 selected_columns_counter,
-                key=lambda x: selected_columns_counter[x] - 0.000001 * len(str(x)) + np.random.random() * 0.000001,
+                key=lambda x: selected_columns_counter[x] - 0.000001 * len(str(x)),
                 reverse=True,
             )
 
