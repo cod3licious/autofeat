@@ -12,6 +12,7 @@ import pandas as pd
 import sklearn.linear_model as lm
 from joblib import Parallel, delayed
 from sklearn.base import BaseEstimator
+from sklearn.model_selection import KFold
 from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 
 from autofeat.nb_utils import nb_standard_scale
@@ -43,7 +44,7 @@ def _noise_filtering(
     target: np.ndarray,
     good_cols: list | None = None,
     problem_type: str = "regression",
-    random_seed: int = None
+    random_seed: int | None = None,
 ) -> list:
     """
     Trains a prediction model with additional noise features and selects only those of the
@@ -63,10 +64,11 @@ def _noise_filtering(
         good_cols = list(range(n_feat))
     assert len(good_cols) == n_feat, "fewer column names provided than features in X."
     # perform noise filtering on these features
+    kf = KFold(n_splits=5, shuffle=True, random_state=random_seed)
     if problem_type == "regression":
-        model = lm.LassoLarsCV(cv=5, eps=1e-8)
+        model = lm.LassoLarsCV(cv=kf, eps=1e-8)
     elif problem_type == "classification":
-        model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced",random_state=random_seed)
+        model = lm.LogisticRegressionCV(cv=kf, penalty="l1", solver="saga", class_weight="balanced", random_state=random_seed)
     else:
         logging.warning(f"[featsel] Unknown problem_type {problem_type} - not performing noise filtering.")
         model = None
@@ -91,7 +93,9 @@ def _noise_filtering(
     return good_cols
 
 
-def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: str = "regression", verbose: int = 0, random_seed: int = None) -> list:
+def _select_features_1run(
+    df: pd.DataFrame, target: np.ndarray, problem_type: str = "regression", verbose: int = 0, random_seed: int | None = None
+) -> list:
     """
     One feature selection run.
 
@@ -107,7 +111,7 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
     """
     if df.shape[0] <= 1:
         raise ValueError(f"n_samples = {df.shape[0]}")
-    
+
     # Set random seed
     if random_seed is not None:
         np.random.seed(random_seed)
@@ -137,7 +141,7 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
     initial_cols = list(df.columns[coefs > thr])
 
     # noise filter
-    initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, random_seed=random_seed)
+    initial_cols = _noise_filtering(df[initial_cols].to_numpy(), target, initial_cols, problem_type, random_seed=random_seed)
     good_cols_set = set(initial_cols)
     if verbose > 0:
         logging.info(f"[featsel]\t {len(initial_cols)} initial features.")
@@ -146,8 +150,7 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
     X_w_noise = _add_noise_features(df[initial_cols].to_numpy())
 
     # go through all remaining features in splits of n_feat <= 0.5*n_train
-    np.random.seed(random_seed)
-    #other_cols = list(np.random.permutation(list(set(df.columns).difference(initial_cols))))
+    # other_cols = list(np.random.permutation(list(set(df.columns).difference(initial_cols))))
     other_cols = list(np.random.permutation(sorted(set(df.columns).difference(initial_cols))))
     if other_cols:
         n_splits = int(np.ceil(len(other_cols) / max(10, 0.5 * df.shape[0] - len(initial_cols))))
@@ -158,7 +161,9 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
             if problem_type == "regression":
                 model = lm.LassoLarsCV(cv=5, eps=1e-8)
             else:
-                model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced",  random_state=random_seed)
+                model = lm.LogisticRegressionCV(
+                    cv=5, penalty="l1", solver="saga", class_weight="balanced", random_state=random_seed
+                )
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 # TODO: remove if sklearn least_angle issue is fixed
@@ -198,7 +203,7 @@ def select_features(
     problem_type: str = "regression",
     n_jobs: int = 1,
     verbose: int = 0,
-    random_seed: int = None,
+    random_seed: int | None = None,
 ) -> list:
     """
     Selects predictive features given the data and targets.
@@ -219,7 +224,7 @@ def select_features(
     # Set random seed
     if random_seed is not None:
         np.random.seed(random_seed)
-                       
+
     if not (len(df) == len(target)):
         raise ValueError("[featsel] df and target dimension mismatch.")
     if keep is None:
@@ -242,12 +247,18 @@ def select_features(
 
     # select good features in k runs in parallel
     # by doing sort of a cross-validation (i.e., randomly subsample data points)
-    def run_select_features(i: int, seed:int):
+    def run_select_features(i: int, random_seed: int):
         if verbose > 0:
             logging.info(f"[featsel] Feature selection run {i + 1}/{featsel_runs}")
-        np.random.seed(seed)
+        np.random.seed(random_seed)
+        loop_seed = np.random.randint(
+            10**6
+        )  # Added to random_seed to make sure that the 1run seed is different for each run, but globally reproducible
+        seed = random_seed + loop_seed if random_seed is not None else loop_seed
         rand_idx = np.random.permutation(df_scaled.index)[: max(10, int(0.85 * len(df_scaled)))]
-        return _select_features_1run(df_scaled.iloc[rand_idx], target_scaled[rand_idx], problem_type, verbose=verbose - 1, random_seed=seed)
+        return _select_features_1run(
+            df_scaled.iloc[rand_idx], target_scaled[rand_idx], problem_type, verbose=verbose - 1, random_seed=seed
+        )
 
     if featsel_runs >= 1 and problem_type in ("regression", "classification"):
         if n_jobs == 1 or featsel_runs == 1:
@@ -258,21 +269,28 @@ def select_features(
 
         else:
             # Generate a list of seeds, one for each run
-            seeds = np.random.randint(0, 100000, size=featsel_runs)
+            def random_seed_generator(low=0, high=2**32 - 1):
+                while True:
+                    seed = np.random.randint(low, high)
+                    yield seed
+
+            seeds = random_seed_generator()
 
             def flatten_lists(l: list):
                 return [item for sublist in l for item in sublist]
 
             selected_columns = flatten_lists(
                 Parallel(n_jobs=n_jobs, verbose=100 * verbose)(
-                    delayed(run_select_features)(i, seeds[i]) for i in range(featsel_runs)))
-            
+                    delayed(run_select_features)(i, seeds[i]) for i in range(featsel_runs)
+                )
+            )
+
         if selected_columns:
             selected_columns_counter = Counter(selected_columns)
             # sort by frequency, but down weight longer formulas to break ties. Also added some randomness to fix reproducibility when equal freq and length
             selected_columns = sorted(
                 selected_columns_counter,
-                key=lambda x: selected_columns_counter[x] - 0.000001 * len(str(x)) + np.random.random() * 0.000001,
+                key=lambda x: selected_columns_counter[x] - 0.000001 * len(str(x)),
                 reverse=True,
             )
 
@@ -317,7 +335,7 @@ class FeatureSelector(BaseEstimator):
         keep: list | None = None,
         n_jobs: int = 1,
         verbose: int = 0,
-        random_seed: int = None
+        random_seed: int | None = None,
     ):
         """
         multi-step cross-validated feature selection
@@ -364,14 +382,7 @@ class FeatureSelector(BaseEstimator):
         df = pd.DataFrame(X, columns=cols)
         # do the feature selection
         self.good_cols_ = select_features(
-            df,
-            target,
-            self.featsel_runs,
-            self.keep,
-            self.problem_type,
-            self.n_jobs,
-            self.verbose,
-            self.random_seed
+            df, target, self.featsel_runs, self.keep, self.problem_type, self.n_jobs, self.verbose, self.random_seed
         )
         self.n_features_in_ = X.shape[1]
         return self
