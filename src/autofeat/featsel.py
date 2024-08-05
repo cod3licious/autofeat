@@ -12,6 +12,7 @@ import pandas as pd
 import sklearn.linear_model as lm
 from joblib import Parallel, delayed
 from sklearn.base import BaseEstimator
+from sklearn.model_selection import KFold
 from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 
 from autofeat.nb_utils import nb_standard_scale
@@ -59,10 +60,11 @@ def _noise_filtering(
         good_cols = list(range(n_feat))
     assert len(good_cols) == n_feat, "fewer column names provided than features in X."
     # perform noise filtering on these features
+    kf = KFold(n_splits=5, shuffle=True, random_state=random_seed)
     if problem_type == "regression":
-        model = lm.LassoLarsCV(cv=5, eps=1e-8)
+        model = lm.LassoLarsCV(cv=kf, eps=1e-8)
     elif problem_type == "classification":
-        model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced", random_state=random_seed)
+        model = lm.LogisticRegressionCV(cv=kf, penalty="l1", solver="saga", class_weight="balanced", random_state=random_seed)
     else:
         logging.warning(f"[featsel] Unknown problem_type {problem_type} - not performing noise filtering.")
         model = None
