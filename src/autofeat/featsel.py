@@ -40,7 +40,11 @@ def _add_noise_features(X: np.ndarray):
 
 
 def _noise_filtering(
-    X: np.ndarray, target: np.ndarray, good_cols: list | None = None, problem_type: str = "regression", random_seed: int = None
+    X: np.ndarray,
+    target: np.ndarray,
+    good_cols: list | None = None,
+    problem_type: str = "regression",
+    random_seed: int | None = None,
 ) -> list:
     """
     Trains a prediction model with additional noise features and selects only those of the
@@ -90,7 +94,7 @@ def _noise_filtering(
 
 
 def _select_features_1run(
-    df: pd.DataFrame, target: np.ndarray, problem_type: str = "regression", verbose: int = 0, random_seed: int = None
+    df: pd.DataFrame, target: np.ndarray, problem_type: str = "regression", verbose: int = 0, random_seed: int | None = None
 ) -> list:
     """
     One feature selection run.
@@ -199,7 +203,7 @@ def select_features(
     problem_type: str = "regression",
     n_jobs: int = 1,
     verbose: int = 0,
-    random_seed: int = None,
+    random_seed: int | None = None,
 ) -> list:
     """
     Selects predictive features given the data and targets.
@@ -269,6 +273,7 @@ def select_features(
                 while True:
                     seed = np.random.randint(low, high)
                     yield seed
+
             seeds = random_seed_generator()
 
             def flatten_lists(l: list):
@@ -330,7 +335,7 @@ class FeatureSelector(BaseEstimator):
         keep: list | None = None,
         n_jobs: int = 1,
         verbose: int = 0,
-        random_seed: int = None,
+        random_seed: int | None = None,
     ):
         """
         multi-step cross-validated feature selection
