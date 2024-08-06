@@ -16,6 +16,7 @@ from sklearn.model_selection import KFold
 from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 
 from autofeat.nb_utils import nb_standard_scale
+from autofeat.utils import random_seed_generator
 
 logging.basicConfig(format="%(asctime)s %(levelname)s: %(message)s", level=logging.INFO)
 
@@ -117,10 +118,11 @@ def _select_features_1run(
         np.random.seed(random_seed)
 
     # initial selection of too few but (hopefully) relevant features
+    kf = KFold(n_splits=5, shuffle=True, random_state=random_seed)
     if problem_type == "regression":
-        model = lm.LassoLarsCV(cv=5, eps=1e-8)
+        model = lm.LassoLarsCV(cv=kf, eps=1e-8)
     elif problem_type == "classification":
-        model = lm.LogisticRegressionCV(cv=5, penalty="l1", solver="saga", class_weight="balanced")
+        model = lm.LogisticRegressionCV(cv=kf, penalty="l1", solver="saga", class_weight="balanced")
     else:
         logging.warning(f"[featsel] Unknown problem_type {problem_type} - not performing feature selection!")
         return []
@@ -158,11 +160,12 @@ def _select_features_1run(
         for i in range(n_splits):
             current_cols = other_cols[i * split_size : min(len(other_cols), (i + 1) * split_size)]
             X = np.hstack([df[current_cols].to_numpy(), X_w_noise])
+            kf = KFold(n_splits=5, shuffle=True, random_state=random_seed)
             if problem_type == "regression":
-                model = lm.LassoLarsCV(cv=5, eps=1e-8)
+                model = lm.LassoLarsCV(cv=kf, eps=1e-8)
             else:
                 model = lm.LogisticRegressionCV(
-                    cv=5, penalty="l1", solver="saga", class_weight="balanced", random_state=random_seed
+                    cv=kf, penalty="l1", solver="saga", class_weight="balanced", random_state=random_seed
                 )
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
@@ -269,12 +272,7 @@ def select_features(
 
         else:
             # Generate a list of seeds, one for each run
-            def random_seed_generator(low=0, high=2**32 - 1):
-                while True:
-                    seed = np.random.randint(low, high)
-                    yield seed
-
-            seeds = random_seed_generator()
+            seeds = random_seed_generator(num_seeds=featsel_runs)
 
             def flatten_lists(l: list):
                 return [item for sublist in l for item in sublist]
