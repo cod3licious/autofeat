@@ -16,7 +16,6 @@ from sklearn.model_selection import KFold
 from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 
 from autofeat.nb_utils import nb_standard_scale
-from autofeat.utils import random_seed_generator
 
 logging.basicConfig(format="%(asctime)s %(levelname)s: %(message)s", level=logging.INFO)
 
@@ -272,7 +271,8 @@ def select_features(
 
         else:
             # Generate a list of seeds, one for each run
-            seeds = random_seed_generator(num_seeds=featsel_runs)
+            generator = np.random.default_rng(seed=random_seed)
+            seeds = generator.integers(low=0, high=10**6, size=featsel_runs)
 
             def flatten_lists(l: list):
                 return [item for sublist in l for item in sublist]
@@ -285,7 +285,7 @@ def select_features(
 
         if selected_columns:
             selected_columns_counter = Counter(selected_columns)
-            # sort by frequency, but down weight longer formulas to break ties. Also added some randomness to fix reproducibility when equal freq and length
+            # sort by frequency, but down weight longer formulas to break ties
             selected_columns = sorted(
                 selected_columns_counter,
                 key=lambda x: selected_columns_counter[x] - 0.000001 * len(str(x)),
