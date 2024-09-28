@@ -25,8 +25,8 @@ Autofeat is available on PyPI, making it easy to install via `pip`:
 ```
 pip install autofeat
 ```
-### Other Dependencies 
-- numpy 
+### Other Dependencies
+- numpy
 - pandas
 - scikit-learn
 - sympy
@@ -39,7 +39,20 @@ pip install autofeat
 |-------------|------|
 | Example Notebooks | [examples](/notebooks/) |
 | Documentation | [documentation](https://franziskahorn.de/autofeat) |
+| Paper | [paper](https://arxiv.org/abs/1901.07329) |
+| Talk | [PyData talk](https://www.youtube.com/watch?v=4-4pKPv9lJ4) |
 
+If any of this code was helpful for your work, please consider citing the paper:
+```
+@inproceedings{horn2019autofeat,
+  title={The autofeat Python Library for Automated Feature Engineering and Selection},
+  author={Horn, Franziska and Pack, Robert and Rieger, Michael},
+  booktitle={Joint European Conference on Machine Learning and Knowledge Discovery in Databases},
+  pages={111--120},
+  year={2019},
+  organization={Springer}
+}
+```
 
 If you have any questions please don't hesitate to send me an [email](mailto:cod3licious@gmail.com) and of course if you should find any bugs or want to contribute other improvements, pull requests are very welcome!
 
