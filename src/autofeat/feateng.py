@@ -45,7 +45,7 @@ def ncr(n: int, r: int) -> int:
 
 def n_cols_generated(n_features: int, max_steps: int, n_transformations: int = 7, n_combinations: int = 4) -> int:
     """
-    computes the upper bound of how many features will be generated based on n_features to start with
+    Computes the upper bound of how many features will be generated based on n_features to start with
     and max_steps feateng steps.
     """
     # n_transformations is 1-len(func_transform) because either abs() or sqrt and log will be applied

@@ -162,7 +162,7 @@ class AutoFeatModel(BaseEstimator):
             for i, r in enumerate(pi_theorem_results, 1):
                 if self.verbose:
                     logging.info(f"[AutoFeat] Pi Theorem {i}: ")
-                    logging.info(pint.formatter(r.items()))
+                    logging.info(pint.formatter(r.items(), denominator=[]))
                 # compute the final result by multiplying and taking the power of
                 cols = sorted(r)
                 # only use data points where non of the affected columns are NaNs
@@ -170,7 +170,7 @@ class AutoFeatModel(BaseEstimator):
                 ptr = df[cols[0]].to_numpy()[not_na_idx] ** r[cols[0]]
                 for c in cols[1:]:
                     ptr *= df[c].to_numpy()[not_na_idx] ** r[c]
-                df.loc[not_na_idx, f"PT{i}_{pint.formatter(r.items()).replace(' ', '')}"] = ptr
+                df.loc[not_na_idx, f"PT{i}_{pint.formatter(r.items(), denominator=[]).replace(' ', '')}"] = ptr
         return df
 
     def _generate_features(self, df: pd.DataFrame, new_feat_cols: list) -> pd.DataFrame:

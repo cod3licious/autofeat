@@ -1,41 +1,47 @@
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.poetry]
+[project]
 name = "autofeat"
 version = "2.1.3"
 description = "Automatic Feature Engineering and Selection Linear Prediction Model"
-authors = ["Franziska Horn <cod3licious@gmail.com>"]
+authors = [{ name = "Franziska Horn", email = "cod3licious@gmail.com" }]
 readme = "README.md"
-packages = [{include = "autofeat", from = "src"}]
 license = "MIT"
 keywords = ["automl", "feature engineering", "feature selection", "linear model"]
-repository = "https://github.com/cod3licious/autofeat"
-homepage = "https://franziskahorn.de/autofeat"
+requires-python = ">=3.8.1,<3.13"
+dependencies = [
+    "joblib>=1.2.0",
+    "numba>=0.53.1",
+    "numpy>=1.21.0,<2.0",
+    "pandas>=1.3.5,<3.0",
+    "pint>=0.17,<1.0",
+    "scikit-learn>=1.2.0,<1.6",
+    "scipy>=1.7.3",
+    "sympy>=1.7.1",
+]
 
-[tool.poetry.dependencies]
-python = "^3.8.1,<3.13"
-numpy = "^1.20.3"
-numba = ">=0.53.1"
-joblib = "^1.2.0"
-pandas = ">=1.3.5,<3.0.0"
-pint = ">=0.17,<1.0"
-scipy = "^1.7.3"
-scikit-learn = "^1.2.0"
-sympy = "^1.7.1"
+[dependency-groups]
+dev = [
+    "bandit>=1.7.7",
+    "ipython>=8.0.0",
+    "matplotlib>=3.7.2",
+    "mkdocs-material>=9.5.28",
+    "mypy>=1.7.1",
+    "notebook>=6.5.0,<7.0",
+    "poethepoet>=0.24.4",
+    "pytest>=7.4.0",
+    "pyupgrade>=3.9.0",
+    "ruff>=0.2.1",
+]
 
-[tool.poetry.group.dev.dependencies]
-bandit = "^1.7.7"
-ipython = ">=8.0.0"
-notebook = "^6.5.0"
-matplotlib = "^3.7.2"
-mkdocs-material = "^9.5.28"
-mypy = "^1.7.1"
-poethepoet = ">=0.24.4"
-pytest = "^7.4.0"
-pyupgrade = "^3.9.0"
-ruff = ">=0.2.1"
+[project.urls]
+Repository = "https://github.com/cod3licious/autofeat"
+Documentation = "https://franziskahorn.de/autofeat"
+
+[tool.uv]
+required-version = ">=0.5.31"
 
 
 [tool.poe.tasks]
@@ -63,6 +69,7 @@ exclude = [
     "__pycache__",
     "build",
     "dist",
+    "*.ipynb",
 ]
 
 [tool.ruff.lint]
@@ -86,6 +93,7 @@ ignore = ["E501", # Line too long
     "D203", "D204", "D205", # required blank lines
     "G004", # Logging statement uses f-string
     "PIE790", # Unnecessary `pass` statement
+    "PLC0206", # Extracting value from dictionary without calling `.items()`
     "PLR2004", # Magic value used in comparison, consider replacing 0.999 with a constant variable
     "PLR09", # Too many arguments to function call
     "COM812", # trailing comma - don't use together with formatter
