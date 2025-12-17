@@ -38,7 +38,7 @@ pip install autofeat
 | Description | Link |
 |-------------|------|
 | Example Notebooks | [examples](/notebooks/) |
-| Documentation | [documentation](https://franziskahorn.de/autofeat) |
+| Documentation | [documentation](https://cod3licious.github.io/autofeat) |
 | Paper | [paper](https://arxiv.org/abs/1901.07329) |
 | Talk | [PyData talk](https://www.youtube.com/watch?v=4-4pKPv9lJ4) |
 
