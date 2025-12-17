@@ -10,7 +10,7 @@ authors = [{ name = "Franziska Horn", email = "cod3licious@gmail.com" }]
 readme = "README.md"
 license = "MIT"
 keywords = ["automl", "feature engineering", "feature selection", "linear model"]
-requires-python = ">=3.8.1,<3.13"
+requires-python = ">=3.8.1,<3.15"
 dependencies = [
     "joblib>=1.2.0",
     "numba>=0.53.1",
@@ -38,14 +38,14 @@ dev = [
 
 [project.urls]
 Repository = "https://github.com/cod3licious/autofeat"
-Documentation = "https://franziskahorn.de/autofeat"
+Documentation = "https://cod3licious.github.io/autofeat"
 
 [tool.uv]
 required-version = ">=0.5.31"
 
 
 [tool.poe.tasks]
-# run with `poetry run poe format`
+# run with `uv run poe format`
 format = "bash -c 'pyupgrade --py38-plus $(find **/*.py) && ruff check --fix . && ruff format .'"
 check = "bash -c 'ruff check . && mypy src/autofeat && bandit -c pyproject.toml -r .'"
 test = "bash -c 'pytest tests'"
