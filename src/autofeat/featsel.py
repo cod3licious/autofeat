@@ -82,7 +82,7 @@ def _noise_filtering(
             # model.fit(X, target)
         # for classification, model.coefs_ is n_classes x n_features, but we need n_features
         coefs = np.abs(model.coef_) if problem_type == "regression" else np.max(np.abs(model.coef_), axis=0)
-        weights = dict(zip(good_cols, coefs[: len(good_cols)]))
+        weights = dict(zip(good_cols, coefs[: len(good_cols)], strict=True))
         # only include features that are more important than our known noise features
         noise_w_thr = np.max(coefs[n_feat:])
         good_cols = [c for c in good_cols if weights[c] > noise_w_thr]
@@ -159,7 +159,7 @@ def _select_features_1run(df: pd.DataFrame, target: np.ndarray, problem_type: st
             current_cols.extend(initial_cols)
             # for classification, model.coefs_ is n_classes x n_features, but we need n_features
             coefs = np.abs(model.coef_) if problem_type == "regression" else np.max(np.abs(model.coef_), axis=0)
-            weights = dict(zip(current_cols, coefs[: len(current_cols)]))
+            weights = dict(zip(current_cols, coefs[: len(current_cols)], strict=True))
             # only include features that are more important than our known noise features
             noise_w_thr = np.max(coefs[len(current_cols) :])
             good_cols_set.update([c for c in weights if abs(weights[c]) > noise_w_thr])

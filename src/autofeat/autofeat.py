@@ -241,7 +241,7 @@ class AutoFeatModel(BaseEstimator):
             logging.info(f"[AutoFeat] {len(new_feat_cols):5}/{len(new_feat_cols):5} new features ...done.")
         return df.join(pd.DataFrame(feat_array, columns=new_feat_cols, index=df.index))
 
-    def _X2df(self, X: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
+    def _X2df(self, X: np.ndarray | pd.DataFrame) -> pd.DataFrame:
         """
         Helper function that ensures correctness of the input data for classification tasks.
         Inputs:
@@ -264,6 +264,7 @@ class AutoFeatModel(BaseEstimator):
             self.always_return_numpy = False
             df = self.transform(df)
             self.always_return_numpy = temp
+        assert isinstance(df, pd.DataFrame)
         return df
 
     def fit_transform(self, X: np.ndarray | pd.DataFrame, y: np.ndarray | pd.DataFrame) -> np.ndarray | pd.DataFrame:
@@ -408,11 +409,12 @@ class AutoFeatModel(BaseEstimator):
             self.prediction_model_ = model
             # sklearn requires a "classes_" attribute
             if self.problem_type == "classification":
+                assert hasattr(model, "classes_")
                 self.classes_ = model.classes_
             if self.verbose:
                 # for classification, model.coefs_ is n_classes x n_features, but we need n_features
                 coefs = model.coef_ if self.problem_type == "regression" else np.max(np.abs(model.coef_), axis=0)
-                weights = dict(zip(self.good_cols_, coefs))
+                weights = dict(zip(self.good_cols_, coefs, strict=True))
                 logging.info("[AutoFeat] Trained model: largest coefficients:")
                 logging.info(model.intercept_)
                 for c in sorted(weights, key=lambda x: abs(weights[x]), reverse=True):
@@ -498,6 +500,7 @@ class AutoFeatModel(BaseEstimator):
             temp = self.always_return_numpy
             self.always_return_numpy = False
             df = self.transform(df)
+            assert isinstance(df, pd.DataFrame)
             self.always_return_numpy = temp
         return self.prediction_model_.score(df[self.good_cols_].to_numpy(), target)
 
@@ -580,5 +583,6 @@ class AutoFeatClassifier(AutoFeatModel, BaseEstimator, ClassifierMixin):
             - y_pred: predicted targets probabilities returned by prediction_model.predict_proba()
         """
         check_is_fitted(self, ["prediction_model_"])
+        assert hasattr(self.prediction_model_, "predict_proba") and callable(self.prediction_model_.predict_proba)
         df = self._X2df(X)
-        return self.prediction_model_.predict_proba(df[self.good_cols_].to_numpy())
+        return self.prediction_model_.predict_proba(df[self.good_cols_].to_numpy())  # type: ignore

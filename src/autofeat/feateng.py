@@ -6,9 +6,9 @@ from __future__ import annotations
 import logging
 import operator as op
 import re
+from collections.abc import Callable
 from functools import reduce
 from itertools import combinations, product
-from typing import Callable
 
 import numba as nb
 import numpy as np
@@ -406,6 +406,7 @@ def engineer_features(
                     ),
                     axis=1,
                 ),
+                strict=True,
             ),
         )
         cols = [c for c in cols if corrs[c] < 0.9]

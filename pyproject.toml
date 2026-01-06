@@ -24,16 +24,15 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "bandit>=1.7.7",
     "ipython>=8.0.0",
     "matplotlib>=3.7.2",
     "mkdocs-material>=9.5.28",
-    "mypy>=1.7.1",
+    "ty>=0.0.9",
     "notebook>=6.5.0,<7.0",
     "poethepoet>=0.24.4",
     "pytest>=7.4.0",
     "pyupgrade>=3.9.0",
-    "ruff>=0.2.1",
+    "ruff>=0.14.0",
 ]
 
 [project.urls]
@@ -41,18 +40,18 @@ Repository = "https://github.com/cod3licious/autofeat"
 Documentation = "https://cod3licious.github.io/autofeat"
 
 [tool.uv]
-required-version = ">=0.5.31"
+required-version = ">=0.7.13"
 
 
 [tool.poe.tasks]
 # run with `uv run poe format`
 format = "bash -c 'pyupgrade --py38-plus $(find **/*.py) && ruff check --fix . && ruff format .'"
-check = "bash -c 'ruff check . && mypy src/autofeat && bandit -c pyproject.toml -r .'"
+check = "bash -c 'ruff check . && ty check src'"
 test = "bash -c 'pytest tests'"
 
 
 [tool.ruff]
-target-version = "py38"
+target-version = "py310"
 line-length = 128
 
 # Exclude a variety of commonly ignored directories.
@@ -83,7 +82,6 @@ unfixable = ["B", "F841"]
 # Ignore a few rules that we consider too strict.
 ignore = ["E501", # Line too long
     "E741", # Ambiguous variable name: `l`
-    "PD901", # 'df' is a bad variable name
     "N999", # Invalid module name: '🏠_Home'
     "N802", "N803", "N806", # names should be lowercase
     "D1",  # D100 - D107: Missing docstrings
@@ -115,32 +113,9 @@ section-order = ["future", "standard-library", "third-party", "first-party", "te
 
 [tool.ruff.lint.flake8-import-conventions]
 
-[tool.mypy]
-plugins = ["numpy.typing.mypy_plugin"]
-
-[[tool.mypy.overrides]]
-module = [
-    "pandas.*",
-    "sklearn.*",
-    "joblib.*",
-    "scipy.*",
-    "numpy",
-    "numba",
-    "pandas.*",
-    "streamlit.*",
-    "matplotlib.*",
-    "IPython.*",
-    "plotly.*",
-    "seaborn.*",
-    "requests.*",
-    "sqlalchemy.*"
-]
-ignore_missing_imports = true
-
-[tool.bandit]
-targets = ["src/autofeat/"]
-recursive = true
-skips = ["B101"]
+[tool.ty.rules]
+no-matching-overload = "ignore"
+invalid-argument-type = "ignore"  # doesn't properly recognize pandas df columns argument
 
 [tool.pytest.ini_options]
 minversion = "6.0"
